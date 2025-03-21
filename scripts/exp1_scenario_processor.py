@@ -588,18 +588,16 @@ def process_all_scenarios(input_file="data/all_scenarios_upd.csv", output_file="
     print(f"Results saved to {output_file}")
     return results
 
-def process_test_scenarios(input_file="data/all_scenarios_upd.csv", output_file="data/test_scenarios_results.csv", num_test_scenarios=2, start_row=10):
+def process_test_scenario(scenario, output_file="data/test_scenario_result.csv"):
     """
-    Process only a small number of scenarios for testing purposes with verbose output.
+    Process a single hardcoded scenario for testing purposes with verbose output.
 
     Args:
-        input_file: Path to the input CSV file with scenarios
+        scenario: Dictionary containing the scenario parameters
         output_file: Path to write test results
-        num_test_scenarios: Number of scenarios to process for testing
-        start_row: Starting row index in the CSV file (0-based)
 
     Returns:
-        List of results for the processed scenarios
+        Results for the processed scenario
     """
     # Create output directory if it doesn't exist
     os.makedirs(os.path.dirname(output_file) if os.path.dirname(output_file) else '.', exist_ok=True)
@@ -629,225 +627,56 @@ def process_test_scenarios(input_file="data/all_scenarios_upd.csv", output_file=
 
     if not plans or not contributions or not base_quality_goals:
         print("Error: Failed to load required data. Exiting.")
-        return []
+        return {}
 
-    # Read scenarios from CSV
-    all_scenarios = []
-    with open(input_file, 'r', encoding='utf-8') as f:
-        reader = csv.DictReader(f)
-        for i, row in enumerate(reader):
-            # Skip rows before the start_row
-            if i < start_row:
-                continue
+    # Process the single scenario with verbose output
+    print(f"\n\n===== PROCESSING SCENARIO {scenario['id']} =====")
+    print(f"Parameters: event_size={scenario['event_size']}, organizers={scenario['organizers']}, " +
+          f"time={scenario['time']}, budget={scenario['budget']}, alpha={scenario['alpha']}")
+    print(f"Perturbations: org={scenario['perturbation_level_org']}, " +
+          f"time={scenario['perturbation_level_time']}, cost={scenario['perturbation_level_cost']}")
 
-            # Convert numeric fields
-            scenario = {
-                "id": int(row["id"]),
-                "event_size": row["event_size"],
-                "organizers": int(row["organizers"]),
-                "time": int(row["time"]),
-                "budget": int(row["budget"]),
-                "alpha": float(row["alpha"]),
-                "perturbation_level_org": row["perturbation_level_org"],
-                "perturbation_level_time": row["perturbation_level_time"],
-                "perturbation_level_cost": row["perturbation_level_cost"]
-            }
-            all_scenarios.append(scenario)
+    # Calculate impacts for all plans
+    print("\nCalculating plan impacts...")
+    all_plan_impacts = calculate_all_plan_impacts(plans, contributions)
 
-            # Break after collecting num_test_scenarios
-            if len(all_scenarios) >= num_test_scenarios:
-                break
+    # Print all plan impacts
+    print("\nAll Plan Impacts:")
+    print(f"{'Plan ID':<10} | {'Variable':<15} | {'Impact':<10}")
+    print("-" * 40)
+    for plan_id, impacts in list(all_plan_impacts.items())[:5]:  # Show first 5 plans
+        for var_name, impact in impacts.items():
+            print(f"{plan_id:<10} | {var_name:<15} | {impact:<10.2f}")
+    if len(all_plan_impacts) > 5:
+        print(f"... and {len(all_plan_impacts) - 5} more plans")
 
-    print(f"\nLoaded {len(all_scenarios)} test scenarios from {input_file} starting at row {start_row+1}")
+    print(f"\nCalculated impacts for {len(all_plan_impacts)} plans")
 
-    # Process each scenario with verbose output
-    results = []
-    for scenario_index, scenario in enumerate(all_scenarios):
-        print(f"\n\n===== PROCESSING SCENARIO {scenario['id']} (Test {scenario_index+1}/{len(all_scenarios)}) =====")
-        print(f"Parameters: event_size={scenario['event_size']}, organizers={scenario['organizers']}, " +
-              f"time={scenario['time']}, budget={scenario['budget']}, alpha={scenario['alpha']}")
-        print(f"Perturbations: org={scenario['perturbation_level_org']}, " +
-              f"time={scenario['perturbation_level_time']}, cost={scenario['perturbation_level_cost']}")
+    # Calculate quality goals for this scenario
+    quality_goals = calculate_quality_goals_for_scenario(scenario, base_quality_goals)
 
-        # Calculate impacts for all plans
-        print("\nCalculating plan impacts...")
-        all_plan_impacts = calculate_all_plan_impacts(plans, contributions)
+    # Print adjusted quality goals
+    print("\nAdjusted Quality Goals for this scenario:")
+    for qg_id, goal in quality_goals.items():
+        print(f"  {qg_id}: {goal['domain_variable']} ≤ {goal['max_value']}")
 
-        # Print all plan impacts
-        print("\nAll Plan Impacts:")
-        print(f"{'Plan ID':<10} | {'Variable':<15} | {'Impact':<10}")
-        print("-" * 40)
-        for plan_id, impacts in all_plan_impacts.items():
-            for var_name, impact in impacts.items():
-                print(f"{plan_id:<10} | {var_name:<15} | {impact:<10.2f}")
+    # Filter valid plans
+    valid_plans = {}
+    for plan_id, impacts in all_plan_impacts.items():
+        # Check if plan satisfies all constraints
+        if check_plan_validity(impacts, quality_goals):
+            valid_plans[plan_id] = {"name": plan_id, "impact": impacts}
 
-        print(f"\nCalculated impacts for {len(all_plan_impacts)} plans")
+    print(f"\nFiltered down to {len(valid_plans)} valid plans")
+    if valid_plans:
+        print("Valid Plans:")
+        for plan_id in valid_plans:
+            print(f"  {plan_id}")
 
-        # Calculate quality goals for this scenario
-        quality_goals = calculate_quality_goals_for_scenario(scenario, base_quality_goals)
-
-        # Print adjusted quality goals
-        print("\nAdjusted Quality Goals for this scenario:")
-        for qg_id, goal in quality_goals.items():
-            print(f"  {qg_id}: {goal['domain_variable']} ≤ {goal['max_value']}")
-
-        # Filter valid plans
-        valid_plans = {}
-        for plan_id, impacts in all_plan_impacts.items():
-            # Check if plan satisfies all constraints
-            if check_plan_validity(impacts, quality_goals):
-                valid_plans[plan_id] = {"name": plan_id, "impact": impacts}
-
-        print(f"\nFiltered down to {len(valid_plans)} valid plans")
-        if valid_plans:
-            print("Valid Plans:")
-            for plan_id in valid_plans:
-                print(f"  {plan_id}")
-
-        # If no valid plans, continue to next scenario
-        if not valid_plans:
-            print(f"No valid plans for scenario {scenario['id']} - skipping")
-            results.append({
-                "id": scenario["id"],
-                "event_size": scenario["event_size"],
-                "organizers": scenario["organizers"],
-                "time": scenario["time"],
-                "budget": scenario["budget"],
-                "perturbation_level_org": scenario["perturbation_level_org"],
-                "perturbation_level_time": scenario["perturbation_level_time"],
-                "perturbation_level_cost": scenario["perturbation_level_cost"],
-                "alpha": scenario["alpha"],
-                "Q2S_success": 0,
-                "Q2S_margins": 0,
-                "Avg_success": 0,
-                "Avg_margins": 0,
-                "Min_success": 0,
-                "Min_margins": 0,
-                "Random_success": 0,
-                "Random_margins": 0,
-                "num_valid_plans": 0
-            })
-            continue
-
-        # Calculate Q2S matrix - DEBUGGING VERBOSE VERSION
-        q2s_matrix = {}
-        print("\nCalculating Q2S matrix...")
-        q2s_matrix = {}
-
-        for plan_id, plan in valid_plans.items():
-            plan_distances = {}
-            for qg_id, goal in quality_goals.items():
-                domain_var = goal["domain_variable"]
-
-                if domain_var in plan["impact"]:
-                    impact_value = plan["impact"][domain_var]
-
-                    if goal["type"] == "max":
-                        # For max constraints, higher distance is better
-                        distance = (goal["max_value"] - impact_value) / goal["max_value"]
-                        plan_distances[qg_id] = distance
-                    else:
-                        # For min constraints (if implemented in the future)
-                        plan_distances[qg_id] = 0
-
-            if plan_distances:  # Only add to matrix if we have distances
-                q2s_matrix[plan_id] = plan_distances
-
-        print(f"\nQ2S Matrix has {len(q2s_matrix)} plans")
-        if not q2s_matrix:
-            print("WARNING: Q2S matrix is empty! Check domain variables in quality goals match variables in contributions.")
-
-            # Print expected domain variables
-            print("\nExpected domain variables from quality goals:")
-            expected_vars = [goal["domain_variable"] for goal in quality_goals.values()]
-            print(f"  {expected_vars}")
-
-            print("\nAvailable variables in plan impacts:")
-            if all_plan_impacts:
-                first_plan = next(iter(all_plan_impacts.values()))
-                print(f"  {list(first_plan.keys())}")
-            else:
-                print("  No plan impacts available")
-
-            continue  # Skip rest of processing
-
-        # Print just a summary of the Q2S matrix
-        print("\nQ2S Matrix Summary:")
-        if len(q2s_matrix) > 0:
-            # Show sample of first plan
-            sample_plan_id = next(iter(q2s_matrix.keys()))
-            print(f"  Sample ({sample_plan_id}):")
-            for qg_id, distance in q2s_matrix[sample_plan_id].items():
-                print(f"    {qg_id}: {distance:.4f}")
-
-            # Show average distances for all plans
-            avg_distances = {}
-            for qg_id in next(iter(q2s_matrix.values())).keys():
-                avg_distances[qg_id] = sum(plan[qg_id] for plan in q2s_matrix.values()) / len(q2s_matrix)
-
-            print(f"  Average distances across all {len(q2s_matrix)} plans:")
-            for qg_id, avg in avg_distances.items():
-                print(f"    {qg_id}: {avg:.4f}")
-
-        # Apply strategies
-        print("\nApplying selection strategies...")
-
-        # Q2S strategy
-        q2s_plan_id, q2s_score = q2s_selection_strategy(q2s_matrix, scenario["alpha"])
-        if q2s_plan_id:
-            print(f"  Q2S strategy selected plan {q2s_plan_id} with score {q2s_score:.4f}")
-            q2s_success, q2s_margins = evaluate_plan_under_perturbation(
-                q2s_plan_id, valid_plans[q2s_plan_id], quality_goals, scenario
-            )
-            print(f"    Success: {q2s_success}, Margins: {q2s_margins:.4f}")
-        else:
-            print("  Q2S strategy could not select a plan")
-            q2s_success, q2s_margins = 0, 0
-
-        # AvgSat strategy
-        avg_plan_id, avg_score = avg_only_strategy(q2s_matrix)
-        if avg_plan_id:
-            print(f"  AvgSat strategy selected plan {avg_plan_id} with score {avg_score:.4f}")
-            avg_success, avg_margins = evaluate_plan_under_perturbation(
-                avg_plan_id, valid_plans[avg_plan_id], quality_goals, scenario
-            )
-            print(f"    Success: {avg_success}, Margins: {avg_margins:.4f}")
-        else:
-            print("  AvgSat strategy could not select a plan")
-            avg_success, avg_margins = 0, 0
-
-        # MinSat strategy
-        min_plan_id, min_score = min_only_strategy(q2s_matrix)
-        if min_plan_id:
-            print(f"  MinSat strategy selected plan {min_plan_id} with score {min_score:.4f}")
-            min_success, min_margins = evaluate_plan_under_perturbation(
-                min_plan_id, valid_plans[min_plan_id], quality_goals, scenario
-            )
-            print(f"    Success: {min_success}, Margins: {min_margins:.4f}")
-        else:
-            print("  MinSat strategy could not select a plan")
-            min_success, min_margins = 0, 0
-
-        # Random strategy (with multiple trials)
-        print(f"  Running {NUM_RANDOM_RUNS} random selection trials...")
-        random_successes = []
-        random_margins = []
-
-        for i in range(NUM_RANDOM_RUNS):
-            random_plan_id, _ = random_strategy(q2s_matrix)
-            if random_plan_id:
-                success, margin = evaluate_plan_under_perturbation(
-                    random_plan_id, valid_plans[random_plan_id], quality_goals, scenario
-                )
-                random_successes.append(success)
-                random_margins.append(margin)
-
-        random_success = sum(random_successes) / len(random_successes) if random_successes else 0
-        random_margin = sum(random_margins) / len(random_margins) if random_margins else 0
-        print(f"  Random strategy average: Success: {random_success:.4f}, Margins: {random_margin:.4f}")
-
-        # Compile results
-        scenario_results = {
+    # If no valid plans, return failed results
+    if not valid_plans:
+        print(f"No valid plans for scenario {scenario['id']} - aborting")
+        result = {
             "id": scenario["id"],
             "event_size": scenario["event_size"],
             "organizers": scenario["organizers"],
@@ -857,26 +686,204 @@ def process_test_scenarios(input_file="data/all_scenarios_upd.csv", output_file=
             "perturbation_level_time": scenario["perturbation_level_time"],
             "perturbation_level_cost": scenario["perturbation_level_cost"],
             "alpha": scenario["alpha"],
-            "Q2S_success": q2s_success,
-            "Q2S_margins": q2s_margins,
-            "Avg_success": avg_success,
-            "Avg_margins": avg_margins,
-            "Min_success": min_success,
-            "Min_margins": min_margins,
-            "Random_success": random_success,
-            "Random_margins": random_margin,
-            "num_valid_plans": len(valid_plans),
-            "selected_plans": {
-                "Q2S": q2s_plan_id,
-                "Avg": avg_plan_id,
-                "Min": min_plan_id
-            }
+            "Q2S_success": 0,
+            "Q2S_margins": 0,
+            "Avg_success": 0,
+            "Avg_margins": 0,
+            "Min_success": 0,
+            "Min_margins": 0,
+            "Random_success": 0,
+            "Random_margins": 0,
+            "num_valid_plans": 0
         }
 
-        results.append(scenario_results)
-        print(f"\nScenario {scenario['id']} processed successfully.")
+        # Write result to CSV
+        fieldnames = [
+            "id", "event_size", "organizers", "time", "budget",
+            "perturbation_level_org", "perturbation_level_time", "perturbation_level_cost",
+            "alpha", "Q2S_success", "Q2S_margins", "Avg_success", "Avg_margins",
+            "Min_success", "Min_margins", "Random_success", "Random_margins",
+            "num_valid_plans"
+        ]
 
-    # Write results to CSV
+        with open(output_file, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerow({k: v for k, v in result.items() if k in fieldnames})
+
+        print(f"\nFailed result saved to {output_file}")
+        return result
+
+    # Calculate Q2S matrix
+    print("\nCalculating Q2S matrix...")
+    q2s_matrix = {}
+
+    for plan_id, plan in valid_plans.items():
+        plan_distances = {}
+        for qg_id, goal in quality_goals.items():
+            domain_var = goal["domain_variable"]
+
+            if domain_var in plan["impact"]:
+                impact_value = plan["impact"][domain_var]
+
+                if goal["type"] == "max":
+                    # For max constraints, higher distance is better
+                    distance = (goal["max_value"] - impact_value) / goal["max_value"]
+                    plan_distances[qg_id] = distance
+                else:
+                    # For min constraints (if implemented in the future)
+                    plan_distances[qg_id] = 0
+
+        if plan_distances:  # Only add to matrix if we have distances
+            q2s_matrix[plan_id] = plan_distances
+
+    print(f"\nQ2S Matrix has {len(q2s_matrix)} plans")
+    if not q2s_matrix:
+        print("WARNING: Q2S matrix is empty! Check domain variables in quality goals match variables in contributions.")
+
+        # Print expected domain variables
+        print("\nExpected domain variables from quality goals:")
+        expected_vars = [goal["domain_variable"] for goal in quality_goals.values()]
+        print(f"  {expected_vars}")
+
+        print("\nAvailable variables in plan impacts:")
+        if all_plan_impacts:
+            first_plan = next(iter(all_plan_impacts.values()))
+            print(f"  {list(first_plan.keys())}")
+        else:
+            print("  No plan impacts available")
+
+        # Return failed result
+        result = {
+            "id": scenario["id"],
+            "event_size": scenario["event_size"],
+            "organizers": scenario["organizers"],
+            "time": scenario["time"],
+            "budget": scenario["budget"],
+            "perturbation_level_org": scenario["perturbation_level_org"],
+            "perturbation_level_time": scenario["perturbation_level_time"],
+            "perturbation_level_cost": scenario["perturbation_level_cost"],
+            "alpha": scenario["alpha"],
+            "Q2S_success": 0,
+            "Q2S_margins": 0,
+            "Avg_success": 0,
+            "Avg_margins": 0,
+            "Min_success": 0,
+            "Min_margins": 0,
+            "Random_success": 0,
+            "Random_margins": 0,
+            "num_valid_plans": len(valid_plans)
+        }
+
+        # Write result to CSV
+        fieldnames = [
+            "id", "event_size", "organizers", "time", "budget",
+            "perturbation_level_org", "perturbation_level_time", "perturbation_level_cost",
+            "alpha", "Q2S_success", "Q2S_margins", "Avg_success", "Avg_margins",
+            "Min_success", "Min_margins", "Random_success", "Random_margins",
+            "num_valid_plans"
+        ]
+
+        with open(output_file, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerow({k: v for k, v in result.items() if k in fieldnames})
+
+        print(f"\nFailed result saved to {output_file}")
+        return result
+
+    # Print Q2S matrix summary
+    print("\nQ2S Matrix:")
+    for plan_id, distances in q2s_matrix.items():
+        print(f"  {plan_id}:")
+        for qg_id, distance in distances.items():
+            print(f"    {qg_id}: {distance:.4f}")
+
+    # Apply strategies
+    print("\nApplying selection strategies...")
+
+    # Q2S strategy
+    q2s_plan_id, q2s_score = q2s_selection_strategy(q2s_matrix, scenario["alpha"])
+    if q2s_plan_id:
+        print(f"  Q2S strategy selected plan {q2s_plan_id} with score {q2s_score:.4f}")
+        q2s_success, q2s_margins = evaluate_plan_under_perturbation(
+            q2s_plan_id, valid_plans[q2s_plan_id], quality_goals, scenario
+        )
+        print(f"    Success: {q2s_success}, Margins: {q2s_margins:.4f}")
+    else:
+        print("  Q2S strategy could not select a plan")
+        q2s_success, q2s_margins = 0, 0
+
+    # AvgSat strategy
+    avg_plan_id, avg_score = avg_only_strategy(q2s_matrix)
+    if avg_plan_id:
+        print(f"  AvgSat strategy selected plan {avg_plan_id} with score {avg_score:.4f}")
+        avg_success, avg_margins = evaluate_plan_under_perturbation(
+            avg_plan_id, valid_plans[avg_plan_id], quality_goals, scenario
+        )
+        print(f"    Success: {avg_success}, Margins: {avg_margins:.4f}")
+    else:
+        print("  AvgSat strategy could not select a plan")
+        avg_success, avg_margins = 0, 0
+
+    # MinSat strategy
+    min_plan_id, min_score = min_only_strategy(q2s_matrix)
+    if min_plan_id:
+        print(f"  MinSat strategy selected plan {min_plan_id} with score {min_score:.4f}")
+        min_success, min_margins = evaluate_plan_under_perturbation(
+            min_plan_id, valid_plans[min_plan_id], quality_goals, scenario
+        )
+        print(f"    Success: {min_success}, Margins: {min_margins:.4f}")
+    else:
+        print("  MinSat strategy could not select a plan")
+        min_success, min_margins = 0, 0
+
+    # Random strategy (with multiple trials)
+    print(f"  Running {NUM_RANDOM_RUNS} random selection trials...")
+    random_successes = []
+    random_margins = []
+
+    for i in range(NUM_RANDOM_RUNS):
+        random_plan_id, _ = random_strategy(q2s_matrix)
+        if random_plan_id:
+            success, margin = evaluate_plan_under_perturbation(
+                random_plan_id, valid_plans[random_plan_id], quality_goals, scenario
+            )
+            random_successes.append(success)
+            random_margins.append(margin)
+
+    random_success = sum(random_successes) / len(random_successes) if random_successes else 0
+    random_margin = sum(random_margins) / len(random_margins) if random_margins else 0
+    print(f"  Random strategy average: Success: {random_success:.4f}, Margins: {random_margin:.4f}")
+
+    # Compile result
+    result = {
+        "id": scenario["id"],
+        "event_size": scenario["event_size"],
+        "organizers": scenario["organizers"],
+        "time": scenario["time"],
+        "budget": scenario["budget"],
+        "perturbation_level_org": scenario["perturbation_level_org"],
+        "perturbation_level_time": scenario["perturbation_level_time"],
+        "perturbation_level_cost": scenario["perturbation_level_cost"],
+        "alpha": scenario["alpha"],
+        "Q2S_success": q2s_success,
+        "Q2S_margins": q2s_margins,
+        "Avg_success": avg_success,
+        "Avg_margins": avg_margins,
+        "Min_success": min_success,
+        "Min_margins": min_margins,
+        "Random_success": random_success,
+        "Random_margins": random_margin,
+        "num_valid_plans": len(valid_plans),
+        "selected_plans": {
+            "Q2S": q2s_plan_id,
+            "Avg": avg_plan_id,
+            "Min": min_plan_id
+        }
+    }
+
+    # Write result to CSV
     fieldnames = [
         "id", "event_size", "organizers", "time", "budget",
         "perturbation_level_org", "perturbation_level_time", "perturbation_level_cost",
@@ -888,17 +895,31 @@ def process_test_scenarios(input_file="data/all_scenarios_upd.csv", output_file=
     with open(output_file, 'w', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerows([{k: v for k, v in r.items() if k in fieldnames} for r in results])
+        writer.writerow({k: v for k, v in result.items() if k in fieldnames})
 
-    print(f"\nTest results saved to {output_file}")
-    return results
+    print(f"\nResult saved to {output_file}")
+    return result
 
 if __name__ == "__main__":
-    print("Starting Q2S Experiment 1 verbose test processing...")
+    print("Starting Q2S test with hardcoded scenario...")
     start_time = datetime.now()
 
-    # Process test scenarios starting from row 10
-    results = process_test_scenarios(start_row=10)
+    # Create hardcoded scenario from the provided string
+    # 39,small,1,2,100,0.3,low_neg,no,low_neg
+    hardcoded_scenario = {
+        "id": 39,
+        "event_size": "small",
+        "organizers": 1,
+        "time": 2,
+        "budget": 100,
+        "alpha": 0.5,
+        "perturbation_level_org": "low_neg",
+        "perturbation_level_time": "no",
+        "perturbation_level_cost": "low_neg"
+    }
+
+    # Process the hardcoded scenario
+    result = process_test_scenario(hardcoded_scenario)
 
     end_time = datetime.now()
     print(f"\nTest processing completed in {end_time - start_time}")
