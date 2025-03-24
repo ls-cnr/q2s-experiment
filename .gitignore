@@ -30,6 +30,30 @@ ENV/
 *.swp
 *.swo
 
-# Dati generati
-data/*.csv
-data/*.xlsx
+.DS_Store
+**/.DS_Store
+
+.python-version
+venv/
+.venv/
+env/
+.env/
+pyenv/
+.pyenv/
+
+# Python bytecode e cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Distribuzione e packaging
+dist/
+build/
+*.egg-info/
+
+# Zed Editor files
+.zed/
+.zed-settings.json
+.zed-workspace
+.zed-meta/
