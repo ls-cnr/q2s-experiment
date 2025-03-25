@@ -23,6 +23,8 @@ var/
 # Esclude tutti i file CSV
 *.csv
 
+results/
+
 # Ma traccia questi file specifici
 !data/exp1_plans.csv
 !data/exp1_contributions.csv
