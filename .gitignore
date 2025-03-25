@@ -20,6 +20,15 @@ var/
 .installed.cfg
 *.egg
 
+# Esclude tutti i file CSV
+*.csv
+
+# Ma traccia questi file specifici
+!data/exp1_plans.csv
+!data/exp1_contributions.csv
+!data/exp1_quality_goals.csv
+
+
 # Virtual Environment
 venv/
 ENV/
