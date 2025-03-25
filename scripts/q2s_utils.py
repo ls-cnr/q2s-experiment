@@ -4,6 +4,16 @@ import pandas as pd
 # DATA LOADING FUNCTIONS
 # ---------------------------------------------------------------------------
 
+EXP1_EVENT_SIZE_MODIFIERS = {
+    "small": {"TotalCost": 1.0, "TimeSpent": 1.0, "TotalEffort": 1.0},
+    "medium": {"TotalCost": 2.0, "TimeSpent": 1.5, "TotalEffort": 2.0},
+    "big": {"TotalCost": 3.0, "TimeSpent": 2.0, "TotalEffort": 3.0}
+}
+
+# ---------------------------------------------------------------------------
+# DATA LOADING FUNCTIONS
+# ---------------------------------------------------------------------------
+
 def load_plans(file_path):
     """
     Load plans from CSV file.
@@ -52,31 +62,28 @@ def load_contributions(file_path):
         print(f"Error loading contributions: {e}")
         return {}
 
-def load_quality_goals(file_path):
+def load_quality_goals_mapping(file_path):
     """
-    Load quality goals from CSV file.
-    Returns a dictionary mapping quality goal IDs to their domain variables and constraints.
+    Load quality goals mapping from CSV file.
+    Returns a dictionary mapping quality goal IDs to their domain variables.
+
+    New version: now the file only contains the mapping between QG and domain variables,
+    without the constraints that will come from the scenarios.
     """
-    quality_goals = {}
+    quality_goals_mapping = {}
 
     try:
         df = pd.read_csv(file_path)
-        # Each row defines a quality goal
+        # Each row defines a quality goal and its domain variable
         for _, row in df.iterrows():
             qg_id = row['Quality Goals']
             domain_var = row['Domain Variable']
-            constraint = float(row['QG constraints'])
-            quality_goals[qg_id] = {
-                "name": qg_id,
-                "domain_variable": domain_var,
-                "max_value": constraint,
-                "type": "max"  # Assuming all constraints are upper bounds
-            }
+            quality_goals_mapping[qg_id] = domain_var
 
-        print(f"Loaded {len(quality_goals)} quality goals from {file_path}")
-        return quality_goals
+        print(f"Loaded {len(quality_goals_mapping)} quality goals mappings from {file_path}")
+        return quality_goals_mapping
     except Exception as e:
-        print(f"Error loading quality goals: {e}")
+        print(f"Error loading quality goals mappings: {e}")
         return {}
 
 # ---------------------------------------------------------------------------
@@ -117,43 +124,61 @@ def calculate_all_plan_impacts(plans, contributions):
 # QUALITY GOAL CALCULATION AND PLAN FILTERING
 # ---------------------------------------------------------------------------
 
-def calculate_quality_goals_for_scenario(scenario, base_quality_goals, event_size_modifiers=None):
+def create_quality_goals_from_scenario(scenario, quality_goals_mapping, event_size_modifiers=None):
     """
-    Adjust quality goals based on scenario parameters.
+    Create quality goals directly from scenario constraints.
     Returns a dictionary of quality goals with their constraint values.
 
     Args:
-        scenario: Dictionary with scenario parameters
-        base_quality_goals: Base quality goals to adjust
+        scenario: Dictionary with scenario parameters including direct constraints
+        quality_goals_mapping: Mapping between quality goal IDs and domain variables
         event_size_modifiers: Optional dictionary of modifiers for different event sizes
     """
     event_size = scenario["event_size"]
-    organizers = scenario["organizers"]
 
-    # Create a copy of the base quality goals
+    # Create quality goals using scenario constraints
     quality_goals = {}
-    for qg_id, goal in base_quality_goals.items():
-        quality_goals[qg_id] = goal.copy()
+
+    # Map from domain variable types to scenario constraint fields
+    constraint_mapping = {
+        "TotalCost": "cost_constraint",
+        "TotalEffort": "effort_constraint",
+        "TimeSpent": "time_constraint"
+    }
 
     # Default event size modifiers if none provided
     if event_size_modifiers is None:
-        event_size_modifiers = {
-            "small": {"TotalCost": 1.0, "TimeSpent": 1.0, "TotalEffort": 1.0},
-            "medium": {"TotalCost": 2.0, "TimeSpent": 1.5, "TotalEffort": 2.0},
-            "big": {"TotalCost": 3.0, "TimeSpent": 2.0, "TotalEffort": 3.0}
-        }
+        event_size_modifiers = EXP1_EVENT_SIZE_MODIFIERS
 
     size_mod = event_size_modifiers[event_size]
 
-    # Adjust constraints based on event size and organizers
-    for qg_id, goal in quality_goals.items():
-        domain_var = goal["domain_variable"]
-        if domain_var in size_mod:
-            goal["max_value"] *= size_mod[domain_var]
+    # Create quality goals based on the mapping and scenario constraints
+    for qg_id, domain_var in quality_goals_mapping.items():
+        # Find the corresponding constraint field
+        constraint_field = None
+        for var_type, field in constraint_mapping.items():
+            if var_type in domain_var:
+                constraint_field = field
+                break
 
-            # Adjust time-related constraints based on number of organizers
-            if "Time" in domain_var:
-                goal["max_value"] /= organizers
+        if not constraint_field or constraint_field not in scenario:
+            print(f"Warning: Could not find constraint for {domain_var} in scenario")
+            continue
+
+        # Get the constraint value from scenario
+        constraint_value = scenario[constraint_field]
+
+        # Apply event size modifier
+        if domain_var in size_mod:
+            constraint_value *= size_mod[domain_var]
+
+        # Create the quality goal
+        quality_goals[qg_id] = {
+            "name": qg_id,
+            "domain_variable": domain_var,
+            "max_value": constraint_value,
+            "type": "max"  # Assuming all constraints are upper bounds
+        }
 
     return quality_goals
 
@@ -167,12 +192,14 @@ def check_plan_validity(plan_impacts, quality_goals):
                 return False
     return True
 
-def filter_valid_plans(scenario, all_plan_impacts, base_quality_goals, event_size_modifiers=None):
+def filter_valid_plans(scenario, all_plan_impacts, quality_goals_mapping, event_size_modifiers=None):
     """
     Filter plans that satisfy all quality goals for the given scenario.
     Returns a dictionary of valid plans with their impacts.
+
+    Updated to use quality_goals_mapping and create_quality_goals_from_scenario
     """
-    quality_goals = calculate_quality_goals_for_scenario(scenario, base_quality_goals, event_size_modifiers)
+    quality_goals = create_quality_goals_from_scenario(scenario, quality_goals_mapping, event_size_modifiers)
 
     valid_plans = {}
     for plan_id, impacts in all_plan_impacts.items():

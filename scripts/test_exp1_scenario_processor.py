@@ -35,15 +35,15 @@ class TestExp1ScenarioProcessor(unittest.TestCase):
             "QG2": {"name": "QG2", "domain_variable": "TimeSpent", "max_value": 6, "type": "max"}
         }
 
-        # Scenari per i test delle perturbazioni
+        # Scenari per i test delle perturbazioni - AGGIORNATI con i nuovi parametri
         self.scenario_no_perturbation = {
             "id": 1,
             "event_size": "small",
-            "organizers": 1,
-            "time": 2,
-            "budget": 100,
+            "cost_constraint": 200,
+            "effort_constraint": 3,
+            "time_constraint": 6,
             "alpha": 0.5,
-            "perturbation_level_org": "no",
+            "perturbation_level_effort": "no",
             "perturbation_level_time": "no",
             "perturbation_level_cost": "no"
         }
@@ -51,25 +51,25 @@ class TestExp1ScenarioProcessor(unittest.TestCase):
         self.scenario_with_perturbation = {
             "id": 2,
             "event_size": "small",
-            "organizers": 1,
-            "time": 2,
-            "budget": 100,
+            "cost_constraint": 200,
+            "effort_constraint": 3,
+            "time_constraint": 6,
             "alpha": 0.5,
-            "perturbation_level_org": "low_neg",  # +1 organizzatore (aumenta effort)
-            "perturbation_level_time": "high_neg",  # +48 ore
-            "perturbation_level_cost": "low_neg"   # +50 euro
+            "perturbation_level_effort": "low_neg",  # +15% effort
+            "perturbation_level_time": "high_neg",   # +48 ore
+            "perturbation_level_cost": "low_neg"     # +50 euro
         }
 
         self.scenario_with_positive_perturbation = {
             "id": 3,
             "event_size": "small",
-            "organizers": 1,
-            "time": 2,
-            "budget": 100,
+            "cost_constraint": 200,
+            "effort_constraint": 3,
+            "time_constraint": 6,
             "alpha": 0.5,
-            "perturbation_level_org": "pos",  # -1 organizzatore (riduce effort)
-            "perturbation_level_time": "pos",  # -24 ore
-            "perturbation_level_cost": "pos"   # -50 euro
+            "perturbation_level_effort": "pos",  # -15% effort
+            "perturbation_level_time": "pos",    # -24 ore
+            "perturbation_level_cost": "pos"     # -50 euro
         }
 
     def test_avg_only_strategy(self):

@@ -5,56 +5,61 @@ from datetime import datetime
 
 def generate_scenarios():
     """
-    Generate scenarios for Q2S Experiment 1 with separate perturbation levels for each quality dimension.
+    Generate scenarios for Q2S Experiment 1 with direct quality constraints
+    instead of indirect parameters like organizers and budget.
     """
     # Define factor values
-    event_size_options = ["small", "medium", "big"]
-    organizers_options = [1, 2, 3]
-    time_options = [2, 6, 14]  # days
-    budget_options = [100, 200, 500]  # euros
+    event_size_options = ["medium"]
+    #event_size_options = ["small", "medium", "big"]
+
+    # Sostituito organizers, time, budget con vincoli diretti
+    cost_constraint_options = [100, 200, 250, 400]  # euro
+    effort_constraint_options = [1, 2, 3, 4]  # unità di sforzo
+    time_constraint_options = [2, 4, 6, 8]  # giorni
+
     alpha_options = [0.3, 0.5, 0.7]  # alpha values for Q2S
 
     # Define perturbation levels for each quality dimension
     # pos = positive (improvement), no = no change, low_neg/high_neg = negative impacts
-    perturbation_level_org = ["pos", "no", "low_neg", "high_neg"]
-    perturbation_level_time = ["pos", "no", "low_neg", "high_neg"]
     perturbation_level_cost = ["pos", "no", "low_neg", "high_neg"]
+    perturbation_level_effort = ["pos", "no", "low_neg", "high_neg"]
+    perturbation_level_time = ["pos", "no", "low_neg", "high_neg"]
 
     # Generate all combinations of factors
     all_combinations = list(itertools.product(
         event_size_options,
-        organizers_options,
-        time_options,
-        budget_options,
+        cost_constraint_options,
+        effort_constraint_options,
+        time_constraint_options,
         alpha_options,
-        perturbation_level_org,
-        perturbation_level_time,
-        perturbation_level_cost
+        perturbation_level_cost,
+        perturbation_level_effort,
+        perturbation_level_time
     ))
 
     print(f"Generated {len(all_combinations)} combinations of factors")
 
     # Create scenarios as rows for CSV
     # First create the headers
-    headers = ["id", "event_size", "organizers", "time", "budget", "alpha",
-               "perturbation_level_org", "perturbation_level_time", "perturbation_level_cost"]
+    headers = ["id", "event_size", "cost_constraint", "effort_constraint", "time_constraint", "alpha",
+               "perturbation_level_cost", "perturbation_level_effort", "perturbation_level_time"]
 
     # Then create the rows
     rows = []
     for i, combo in enumerate(all_combinations):
-        event_size, organizers, time, budget, alpha, pert_org, pert_time, pert_cost = combo
+        event_size, cost_constraint, effort_constraint, time_constraint, alpha, pert_cost, pert_effort, pert_time = combo
 
         # Create a row for CSV
         row = [
             i + 1,                # id
             event_size,           # event_size
-            organizers,           # organizers
-            time,                 # time
-            budget,               # budget
+            cost_constraint,      # cost_constraint
+            effort_constraint,    # effort_constraint
+            time_constraint,      # time_constraint
             alpha,                # alpha
-            pert_org,             # perturbation_level_org
-            pert_time,            # perturbation_level_time
-            pert_cost             # perturbation_level_cost
+            pert_cost,            # perturbation_level_cost
+            pert_effort,          # perturbation_level_effort
+            pert_time             # perturbation_level_time
         ]
 
         rows.append(row)
@@ -82,14 +87,14 @@ def save_to_csv(headers, rows, filename=None):
 
 def main():
     """Main function to generate and save scenarios."""
-    print("Generating scenarios for Q2S Experiment 1...")
+    print("Generating scenarios for Q2S Experiment 1 with direct constraints...")
     headers, rows = generate_scenarios()
 
     # Create output directory
     os.makedirs("data", exist_ok=True)
 
     # Save all scenarios to a CSV file
-    filename = os.path.join("data", "all_scenarios_upd.csv")
+    filename = os.path.join("data", "scenarios.csv")
     save_to_csv(headers, rows, filename)
 
     print("Scenario generation complete.")

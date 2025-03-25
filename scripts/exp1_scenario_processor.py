@@ -6,9 +6,9 @@ from datetime import datetime
 import pandas as pd
 
 from q2s_utils import (
-    load_plans, load_contributions, load_quality_goals,
-    calculate_plan_impact, calculate_all_plan_impacts,
-    calculate_quality_goals_for_scenario, check_plan_validity, filter_valid_plans,
+    load_plans, load_contributions, load_quality_goals_mapping,
+    calculate_all_plan_impacts,
+    check_plan_validity, filter_valid_plans,
     calculate_q2s_matrix, q2s_selection_strategy
 )
 
@@ -16,31 +16,24 @@ from q2s_utils import (
 # EXP1 SPECIFIC CONSTANTS
 # ---------------------------------------------------------------------------
 
-EXP1_EVENT_SIZE_MODIFIERS = {
-    "small": {"TotalCost": 1.0, "TimeSpent": 1.0, "TotalEffort": 1.0},
-    "medium": {"TotalCost": 2.0, "TimeSpent": 1.5, "TotalEffort": 2.0},
-    "big": {"TotalCost": 3.0, "TimeSpent": 2.0, "TotalEffort": 3.0}
-}
-
-# Fixed perturbation values based on type and level
 PERTURBATION_VALUE = {
-    "org": {
-        "pos": -1,        # 1 more organizer (reduces time and effort)
-        "no": 0,          # No change
-        "low_neg": 1,     # 1 fewer organizer
-        "high_neg": 2     # 2 fewer organizers
+    "effort": {  #
+        "pos": -1,        # Miglioramento nello sforzo
+        "no": 0,          # Nessun cambiamento
+        "low_neg": 1,     # Piccolo impatto negativo sullo sforzo
+        "high_neg": 2     # Grande impatto negativo sullo sforzo
     },
     "time": {
-        "pos": -24,       # 1 day less (in hours)
-        "no": 0,          # No change
-        "low_neg": 24,    # 1 extra day (in hours)
-        "high_neg": 48    # 2 extra days (in hours)
+        "pos": -24,       # 1 giorno in meno (in ore)
+        "no": 0,          # Nessun cambiamento
+        "low_neg": 24,    # 1 giorno in più (in ore)
+        "high_neg": 48    # 2 giorni in più (in ore)
     },
     "cost": {
-        "pos": -50,       # 50 euros less
-        "no": 0,          # No change
-        "low_neg": 50,    # 50 euros more
-        "high_neg": 100   # 100 euros more
+        "pos": -50,       # 50 euro in meno
+        "no": 0,          # Nessun cambiamento
+        "low_neg": 50,    # 50 euro in più
+        "high_neg": 100   # 100 euro in più
     }
 }
 
@@ -148,24 +141,27 @@ def apply_perturbation(plan_impacts, scenario, verbose=False):
     perturbed_impacts = dict(plan_impacts)
 
     # Get perturbation values for each dimension
-    org_perturbation = PERTURBATION_VALUE["org"][scenario["perturbation_level_org"]]
+    # Renamed from org to effort
+    effort_perturbation = PERTURBATION_VALUE["effort"][scenario["perturbation_level_effort"]]
     time_perturbation = PERTURBATION_VALUE["time"][scenario["perturbation_level_time"]]
     cost_perturbation = PERTURBATION_VALUE["cost"][scenario["perturbation_level_cost"]]
 
     if verbose:
-        print(f"  Applying perturbations: org={org_perturbation}, time={time_perturbation}, cost={cost_perturbation}")
+        print(f"  Applying perturbations: effort={effort_perturbation}, time={time_perturbation}, cost={cost_perturbation}")
 
     # Apply perturbations to domain variables
     for var in perturbed_impacts:
         original_value = perturbed_impacts[var]
-        if "Time" in var:  # Time-related variable
-            perturbed_impacts[var] += time_perturbation
-        elif "Cost" in var:  # Cost-related variable
+
+        # Apply the appropriate perturbation based on domain variable type
+        if "Cost" in var:  # Cost-related variable
             perturbed_impacts[var] += cost_perturbation
-        elif "Effort" in var:  # Effort might be affected by organizers
-            # Simulate change in effort based on change in organizers
-            if org_perturbation != 0:
-                perturbed_impacts[var] *= (1 + 0.15 * org_perturbation)
+        elif "Time" in var:  # Time-related variable
+            perturbed_impacts[var] += time_perturbation
+        elif "Effort" in var:  # Effort-related variable
+            # Apply as multiplier for effort (similar to previous implementation)
+            if effort_perturbation != 0:
+                perturbed_impacts[var] *= (1 + 0.15 * effort_perturbation)
 
         if verbose and perturbed_impacts[var] != original_value:
             print(f"    {var}: {original_value:.2f} -> {perturbed_impacts[var]:.2f}")
@@ -214,38 +210,28 @@ def evaluate_plan_under_perturbation(plan_id, plan, quality_goals, scenario, ver
 # SCENARIO PROCESSING
 # ---------------------------------------------------------------------------
 
-def process_scenario(scenario, plans, contributions, base_quality_goals, verbose=False, output_file=None):
+def process_scenario(scenario, plans, contributions, quality_goals_mapping, verbose=False, output_file=None):
     """
     Process a single scenario and evaluate different plan selection strategies.
-
-    Args:
-        scenario: Dictionary with scenario parameters
-        plans: Dictionary of plans
-        contributions: Dictionary of contributions
-        base_quality_goals: Dictionary of base quality goals
-        verbose: Whether to print verbose output
-        output_file: Optional path to write results to CSV
-
-    Returns:
-        Dictionary with results
     """
     # Extract scenario parameters
     scenario_id = scenario["id"]
     event_size = scenario["event_size"]
-    organizers = scenario["organizers"]
-    time = scenario["time"]
-    budget = scenario["budget"]
+    cost_constraint = scenario["cost_constraint"]
+    effort_constraint = scenario["effort_constraint"]
+    time_constraint = scenario["time_constraint"]
     alpha = scenario["alpha"]
-    perturbation_level_org = scenario["perturbation_level_org"]
-    perturbation_level_time = scenario["perturbation_level_time"]
     perturbation_level_cost = scenario["perturbation_level_cost"]
+    perturbation_level_effort = scenario["perturbation_level_effort"]
+    perturbation_level_time = scenario["perturbation_level_time"]
 
     if verbose:
         print(f"\n\n===== PROCESSING SCENARIO {scenario_id} =====")
-        print(f"Parameters: event_size={event_size}, organizers={organizers}, " +
-              f"time={time}, budget={budget}, alpha={alpha}")
-        print(f"Perturbations: org={perturbation_level_org}, " +
-              f"time={perturbation_level_time}, cost={perturbation_level_cost}")
+        print(f"Parameters: event_size={event_size}, " +
+              f"cost_constraint={cost_constraint}, effort_constraint={effort_constraint}, " +
+              f"time_constraint={time_constraint}, alpha={alpha}")
+        print(f"Perturbations: cost={perturbation_level_cost}, " +
+              f"effort={perturbation_level_effort}, time={perturbation_level_time}")
     else:
         print(f"Processing scenario {scenario_id}...")
 
@@ -257,18 +243,46 @@ def process_scenario(scenario, plans, contributions, base_quality_goals, verbose
     # Print plan impacts details if verbose
     if verbose:
         print("\nAll Plan Impacts:")
-        print(f"{'Plan ID':<10} | {'Variable':<15} | {'Impact':<10}")
-        print("-" * 40)
-        for plan_id, impacts in list(all_plan_impacts.items())[:5]:  # Show first 5 plans
-            for var_name, impact in impacts.items():
-                print(f"{plan_id:<10} | {var_name:<15} | {impact:<10.2f}")
-        if len(all_plan_impacts) > 5:
-            print(f"... and {len(all_plan_impacts) - 5} more plans")
+
+        # Ottieni tutte le variabili di dominio uniche
+        all_domain_vars = set()
+        for impacts in all_plan_impacts.values():
+            all_domain_vars.update(impacts.keys())
+        all_domain_vars = sorted(list(all_domain_vars))
+
+        # Calcola le larghezze delle colonne
+        plan_id_width = 10
+        var_width = 12
+        total_width = plan_id_width + (var_width + 3) * len(all_domain_vars)
+
+        # Stampa la riga di intestazione
+        print("+" + "-" * (plan_id_width + 2) + "+" + "+".join(["-" * (var_width + 2) for _ in all_domain_vars]) + "+")
+
+        # Stampa i nomi delle colonne
+        header = f"| {'Plan ID':<{plan_id_width}} |"
+        for var in all_domain_vars:
+            header += f" {var:<{var_width}} |"
+        print(header)
+
+        # Stampa la linea separatrice
+        print("+" + "-" * (plan_id_width + 2) + "+" + "+".join(["-" * (var_width + 2) for _ in all_domain_vars]) + "+")
+
+        # Stampa i dati per ogni piano
+        for plan_id, impacts in all_plan_impacts.items():
+            row = f"| {plan_id:<{plan_id_width}} |"
+            for var in all_domain_vars:
+                impact = impacts.get(var, 0)
+                row += f" {impact:<{var_width}.2f} |"
+            print(row)
+
+        # Stampa la riga finale
+        print("+" + "-" * (plan_id_width + 2) + "+" + "+".join(["-" * (var_width + 2) for _ in all_domain_vars]) + "+")
+
         print(f"\nCalculated impacts for {len(all_plan_impacts)} plans")
 
     # Step 1: Calculate quality goals and filter valid plans
     valid_plans, quality_goals = filter_valid_plans(
-        scenario, all_plan_impacts, base_quality_goals, EXP1_EVENT_SIZE_MODIFIERS
+        scenario, all_plan_impacts, quality_goals_mapping, None
     )
 
     # Print quality goals if verbose
@@ -295,12 +309,12 @@ def process_scenario(scenario, plans, contributions, base_quality_goals, verbose
         result = {
             "id": scenario_id,
             "event_size": event_size,
-            "organizers": organizers,
-            "time": time,
-            "budget": budget,
-            "perturbation_level_org": perturbation_level_org,
-            "perturbation_level_time": perturbation_level_time,
+            "cost_constraint": cost_constraint,
+            "effort_constraint": effort_constraint,
+            "time_constraint": time_constraint,
             "perturbation_level_cost": perturbation_level_cost,
+            "perturbation_level_effort": perturbation_level_effort,
+            "perturbation_level_time": perturbation_level_time,
             "alpha": alpha,
             "Q2S_success": 0,
             "Q2S_margins": 0,
@@ -330,13 +344,69 @@ def process_scenario(scenario, plans, contributions, base_quality_goals, verbose
     if verbose:
         print(f"\nQ2S Matrix has {len(q2s_matrix)} plans")
         if q2s_matrix:
-            print("Q2S Matrix (sample):")
-            for plan_id in list(q2s_matrix.keys())[:3]:  # Show first 3 plans
-                print(f"  {plan_id}:")
-                for qg_id, distance in q2s_matrix[plan_id].items():
-                    print(f"    {qg_id}: {distance:.4f}")
-            if len(q2s_matrix) > 3:
-                print(f"  ... and {len(q2s_matrix) - 3} more plans")
+            print("\nQ2S Matrix:")
+
+            # Raccogli tutti i quality goal IDs unici
+            all_qg_ids = set()
+            for distances in q2s_matrix.values():
+                all_qg_ids.update(distances.keys())
+            all_qg_ids = sorted(list(all_qg_ids))
+
+            # Calcola le larghezze delle colonne
+            plan_id_width = 10
+            qg_width = 10
+            stat_width = 10
+
+            # Stampa la riga di intestazione superiore
+            print("+" + "-" * (plan_id_width + 2) + "+" +
+                "+".join(["-" * (qg_width + 2) for _ in all_qg_ids]) + "+" +
+                "+".join(["-" * (stat_width + 2) for _ in range(3)]) + "+")
+
+            # Stampa i nomi delle colonne
+            header = f"| {'Plan ID':<{plan_id_width}} |"
+            for qg_id in all_qg_ids:
+                header += f" {qg_id:<{qg_width}} |"
+            header += f" {'Avg':<{stat_width}} | {'Min':<{stat_width}} | {'Score':<{stat_width}} |"
+            print(header)
+
+            # Stampa la linea separatrice
+            print("+" + "-" * (plan_id_width + 2) + "+" +
+                "+".join(["-" * (qg_width + 2) for _ in all_qg_ids]) + "+" +
+                "+".join(["-" * (stat_width + 2) for _ in range(3)]) + "+")
+
+            # Stampa i dati per ogni piano, aggiungendo le colonne statistiche
+            for plan_id, distances in q2s_matrix.items():
+                row = f"| {plan_id:<{plan_id_width}} |"
+
+                # Aggiungi ogni quality goal
+                distance_values = []
+                for qg_id in all_qg_ids:
+                    distance = distances.get(qg_id, float('nan'))
+                    if not np.isnan(distance):
+                        row += f" {distance:<{qg_width}.4f} |"
+                        distance_values.append(distance)
+                    else:
+                        row += f" {'N/A':<{qg_width}} |"
+
+                # Calcola e aggiungi Avg, Min e Score
+                if distance_values:
+                    avg_sat = sum(distance_values) / len(distance_values)
+                    min_sat = min(distance_values)
+                    score = scenario["alpha"] * avg_sat + (1 - scenario["alpha"]) * min_sat
+
+                    row += f" {avg_sat:<{stat_width}.4f} | {min_sat:<{stat_width}.4f} | {score:<{stat_width}.4f} |"
+                else:
+                    row += f" {'N/A':<{stat_width}} | {'N/A':<{stat_width}} | {'N/A':<{stat_width}} |"
+
+                print(row)
+
+            # Stampa la riga finale
+            print("+" + "-" * (plan_id_width + 2) + "+" +
+                "+".join(["-" * (qg_width + 2) for _ in all_qg_ids]) + "+" +
+                "+".join(["-" * (stat_width + 2) for _ in range(3)]) + "+")
+
+            # Aggiungi legenda per il calcolo dello Score
+            #print(f"\nScore = α * Avg + (1-α) * Min, where α = {scenario['alpha']}")
 
     # Check if matrix is empty
     if not q2s_matrix:
@@ -355,12 +425,12 @@ def process_scenario(scenario, plans, contributions, base_quality_goals, verbose
         result = {
             "id": scenario_id,
             "event_size": event_size,
-            "organizers": organizers,
-            "time": time,
-            "budget": budget,
-            "perturbation_level_org": perturbation_level_org,
-            "perturbation_level_time": perturbation_level_time,
+            "cost_constraint": cost_constraint,
+            "effort_constraint": effort_constraint,
+            "time_constraint": time_constraint,
             "perturbation_level_cost": perturbation_level_cost,
+            "perturbation_level_effort": perturbation_level_effort,
+            "perturbation_level_time": perturbation_level_time,
             "alpha": alpha,
             "Q2S_success": 0,
             "Q2S_margins": 0,
@@ -384,61 +454,60 @@ def process_scenario(scenario, plans, contributions, base_quality_goals, verbose
     # Apply strategies
     if verbose:
         print("\nApplying selection strategies...")
+        # Intestazione tabella
+        print("\n┌─────────────┬──────────────┬─────────┬────────────┬────────────┐")
+        print("│ Strategy    │ Selected Plan │ Score   │ Success    │ Margin     │")
+        print("├─────────────┼──────────────┼─────────┼────────────┼────────────┤")
 
     # Step 3: Apply Q2S strategy
     q2s_plan_id, q2s_score = q2s_selection_strategy(q2s_matrix, alpha)
     if q2s_plan_id:
-        if verbose:
-            print(f"  Q2S strategy selected plan {q2s_plan_id} with score {q2s_score:.4f}")
         q2s_success, q2s_margins = evaluate_plan_under_perturbation(
-            q2s_plan_id, valid_plans[q2s_plan_id], quality_goals, scenario, verbose
+            q2s_plan_id, valid_plans[q2s_plan_id], quality_goals, scenario, verbose and False  # Non visualizzare dettagli interni
         )
         if verbose:
-            print(f"    Success: {q2s_success}, Margins: {q2s_margins:.4f}")
+            print(f"│ Q2S         │ {q2s_plan_id:<12} │ {q2s_score:.4f} │ {q2s_success:<10} │ {q2s_margins:.4f}    │")
     else:
         if verbose:
-            print("  Q2S strategy could not select a plan")
+            print("│ Q2S         │ None         │ 0.0000  │ 0          │ 0.0000     │")
         q2s_success, q2s_margins = 0, 0
 
     # Step 4: Apply AvgSat strategy
-    avg_plan_id, avg_score = avg_only_strategy(q2s_matrix, verbose)
+    avg_plan_id, avg_score = avg_only_strategy(q2s_matrix, verbose and False)
     if avg_plan_id:
         avg_success, avg_margins = evaluate_plan_under_perturbation(
-            avg_plan_id, valid_plans[avg_plan_id], quality_goals, scenario, verbose
+            avg_plan_id, valid_plans[avg_plan_id], quality_goals, scenario, verbose and False
         )
         if verbose:
-            print(f"    Success: {avg_success}, Margins: {avg_margins:.4f}")
+            print(f"│ AvgSat      │ {avg_plan_id:<12} │ {avg_score:.4f} │ {avg_success:<10} │ {avg_margins:.4f}    │")
     else:
         if verbose:
-            print("  AvgSat strategy could not select a plan")
+            print("│ AvgSat      │ None         │ 0.0000  │ 0          │ 0.0000     │")
         avg_success, avg_margins = 0, 0
 
     # Step 5: Apply MinSat strategy
-    min_plan_id, min_score = min_only_strategy(q2s_matrix, verbose)
+    min_plan_id, min_score = min_only_strategy(q2s_matrix, verbose and False)
     if min_plan_id:
         min_success, min_margins = evaluate_plan_under_perturbation(
-            min_plan_id, valid_plans[min_plan_id], quality_goals, scenario, verbose
+            min_plan_id, valid_plans[min_plan_id], quality_goals, scenario, verbose and False
         )
         if verbose:
-            print(f"    Success: {min_success}, Margins: {min_margins:.4f}")
+            print(f"│ MinSat      │ {min_plan_id:<12} │ {min_score:.4f} │ {min_success:<10} │ {min_margins:.4f}    │")
     else:
         if verbose:
-            print("  MinSat strategy could not select a plan")
+            print("│ MinSat      │ None         │ 0.0000  │ 0          │ 0.0000     │")
         min_success, min_margins = 0, 0
 
     # Step 6: Apply Random strategy
     # Run multiple trials to get an average for random selection
-    if verbose:
-        print(f"  Running {NUM_RANDOM_RUNS} random selection trials...")
-
     random_successes = []
     random_margins = []
 
     for i in range(NUM_RANDOM_RUNS):  # Multiple random trials
-        random_plan_id, _ = random_strategy(q2s_matrix, verbose and i == 0)  # Only verbose for first run
+        random_plan_id, _ = random_strategy(q2s_matrix, verbose and False)  # Nessun output verboso per i trial random
         if random_plan_id:
             success, margin = evaluate_plan_under_perturbation(
-                random_plan_id, valid_plans[random_plan_id], quality_goals, scenario, verbose and i == 0
+                random_plan_id, valid_plans[random_plan_id], quality_goals, scenario, verbose and False
             )
             random_successes.append(success)
             random_margins.append(margin)
@@ -447,18 +516,20 @@ def process_scenario(scenario, plans, contributions, base_quality_goals, verbose
     random_margin = sum(random_margins) / len(random_margins) if random_margins else 0
 
     if verbose:
-        print(f"  Random strategy average across {NUM_RANDOM_RUNS} runs: Success: {random_success:.4f}, Margins: {random_margin:.4f}")
+        # Per la strategia Random, mostriamo solo i risultati medi, non un piano specifico
+        print(f"│ Random      │ (avg {NUM_RANDOM_RUNS} runs) │ N/A     │ {random_success:.4f}    │ {random_margin:.4f}    │")
+        print("└─────────────┴──────────────┴─────────┴────────────┴────────────┘")
 
     # Step 7: Compile results
     result = {
         "id": scenario_id,
         "event_size": event_size,
-        "organizers": organizers,
-        "time": time,
-        "budget": budget,
-        "perturbation_level_org": perturbation_level_org,
-        "perturbation_level_time": perturbation_level_time,
+        "cost_constraint": cost_constraint,
+        "effort_constraint": effort_constraint,
+        "time_constraint": time_constraint,
         "perturbation_level_cost": perturbation_level_cost,
+        "perturbation_level_effort": perturbation_level_effort,
+        "perturbation_level_time": perturbation_level_time,
         "alpha": alpha,
         "Q2S_success": q2s_success,
         "Q2S_margins": q2s_margins,
@@ -496,8 +567,8 @@ def write_result_to_csv(result, output_file):
 
     # Define fieldnames for CSV
     fieldnames = [
-        "id", "event_size", "organizers", "time", "budget",
-        "perturbation_level_org", "perturbation_level_time", "perturbation_level_cost",
+        "id", "event_size", "cost_constraint", "effort_constraint", "time_constraint",
+        "perturbation_level_cost", "perturbation_level_effort", "perturbation_level_time",
         "alpha", "Q2S_success", "Q2S_margins", "Avg_success", "Avg_margins",
         "Min_success", "Min_margins", "Random_success", "Random_margins",
         "num_valid_plans"
@@ -512,8 +583,7 @@ def write_result_to_csv(result, output_file):
 # ---------------------------------------------------------------------------
 # MAIN PROCESSING FUNCTION
 # ---------------------------------------------------------------------------
-
-def process_all_scenarios(input_file="data/exp1_scenarios.csv", output_file="data/exp1_results.csv"):
+def process_all_scenarios(input_file="data/scenarios.csv", output_file="data/results.csv"):
     """
     Process all scenarios from the input CSV file and write results to the output CSV file.
     """
@@ -523,9 +593,9 @@ def process_all_scenarios(input_file="data/exp1_scenarios.csv", output_file="dat
     # Load data from CSV files
     plans = load_plans("data/exp1_plans.csv")
     contributions = load_contributions("data/exp1_contributions.csv")
-    base_quality_goals = load_quality_goals("data/exp1_quality_goals.csv")
+    quality_goals_mapping = load_quality_goals_mapping("data/exp1_quality_goals.csv")
 
-    if not plans or not contributions or not base_quality_goals:
+    if not plans or not contributions or not quality_goals_mapping:
         print("Error: Failed to load required data. Exiting.")
         return []
 
@@ -538,28 +608,22 @@ def process_all_scenarios(input_file="data/exp1_scenarios.csv", output_file="dat
             scenario = {
                 "id": int(row["id"]),
                 "event_size": row["event_size"],
-                "organizers": int(row["organizers"]),
-                "time": int(row["time"]),
-                "budget": int(row["budget"]),
+                "cost_constraint": int(row["cost_constraint"]),
+                "effort_constraint": int(row["effort_constraint"]),
+                "time_constraint": int(row["time_constraint"]),
                 "alpha": float(row["alpha"]),
-                "perturbation_level_org": row["perturbation_level_org"],
-                "perturbation_level_time": row["perturbation_level_time"],
-                "perturbation_level_cost": row["perturbation_level_cost"]
+                "perturbation_level_cost": row["perturbation_level_cost"],
+                "perturbation_level_effort": row["perturbation_level_effort"],
+                "perturbation_level_time": row["perturbation_level_time"]
             }
             scenarios.append(scenario)
 
     print(f"Loaded {len(scenarios)} scenarios from {input_file}")
 
-    # Process each scenario
-    results = []
-    for scenario in scenarios:
-        scenario_results = process_scenario(scenario, plans, contributions, base_quality_goals)
-        results.append(scenario_results)
-
-    # Write all results to CSV
+    # Prepare CSV file with header
     fieldnames = [
-        "id", "event_size", "organizers", "time", "budget",
-        "perturbation_level_org", "perturbation_level_time", "perturbation_level_cost",
+        "id", "event_size", "cost_constraint", "effort_constraint", "time_constraint",
+        "perturbation_level_cost", "perturbation_level_effort", "perturbation_level_time",
         "alpha", "Q2S_success", "Q2S_margins", "Avg_success", "Avg_margins",
         "Min_success", "Min_margins", "Random_success", "Random_margins",
         "num_valid_plans"
@@ -568,42 +632,103 @@ def process_all_scenarios(input_file="data/exp1_scenarios.csv", output_file="dat
     with open(output_file, 'w', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerows([{k: v for k, v in r.items() if k in fieldnames} for r in results])
 
-    print(f"Results saved to {output_file}")
+    # Process each scenario with progress reporting
+    results = []
+    total_scenarios = len(scenarios)
+
+    print(f"\nProcessing {total_scenarios} scenarios...")
+    print("=" * 50)
+
+    for i, scenario in enumerate(scenarios):
+        # Calculate and display progress
+        progress = (i / total_scenarios) * 100
+        progress_bar = "#" * int(progress / 2) + "-" * (50 - int(progress / 2))
+        print(f"\r[{progress_bar}] {progress:.1f}% - Processing scenario {scenario['id']} ({i+1}/{total_scenarios})", end="")
+
+        # Process the scenario
+        scenario_results = process_scenario(scenario, plans, contributions, quality_goals_mapping)
+        results.append(scenario_results)
+
+        # Write to CSV after each scenario (in case of interruption)
+        with open(output_file, 'a', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writerow({k: v for k, v in scenario_results.items() if k in fieldnames})
+
+    print("\r" + " " * 80)  # Clear progress line
+    print("=" * 50)
+    print(f"Processing complete! Results saved to {output_file}")
+
     return results
 
-if __name__ == "__main__":
+def test_processor():
     print("Starting Q2S test with hardcoded scenario...")
     start_time = datetime.now()
 
-    # Create hardcoded scenario
+    # Create hardcoded scenario with the new format
     hardcoded_scenario = {
         "id": 39,
         "event_size": "small",
-        "organizers": 1,
-        "time": 2,
-        "budget": 100,
+        "cost_constraint": 200,
+        "effort_constraint": 4,
+        "time_constraint": 6,
         "alpha": 0.5,
-        "perturbation_level_org": "low_neg",
-        "perturbation_level_time": "no",
-        "perturbation_level_cost": "low_neg"
+        "perturbation_level_cost": "low_neg",
+        "perturbation_level_effort": "low_neg",
+        "perturbation_level_time": "no"
     }
 
     # Load data
     plans = load_plans("data/exp1_plans.csv")
     contributions = load_contributions("data/exp1_contributions.csv")
-    base_quality_goals = load_quality_goals("data/exp1_quality_goals.csv")
+    quality_goals_mapping = load_quality_goals_mapping("data/exp1_quality_goals.csv")
 
     # Process the hardcoded scenario with verbose output
     result = process_scenario(
         hardcoded_scenario,
         plans,
         contributions,
-        base_quality_goals,
+        quality_goals_mapping,
         verbose=True,
         output_file="data/exp1_test_scenario_result.csv"
     )
 
     end_time = datetime.now()
     print(f"\nTest processing completed in {end_time - start_time}")
+
+def execute_processor():
+    print("Starting Q2S experiment: processing all scenarios...")
+    start_time = datetime.now()
+
+    # Definisci i percorsi di input e output
+    input_file = "data/scenarios.csv"
+    output_file = "data/exp1_results.csv"
+
+    # Verifica se il file di input esiste
+    if not os.path.exists(input_file):
+        print(f"Error: Input file {input_file} not found.")
+        print("Creating a test scenario file instead...")
+
+        # Se il file di input non esiste, crea un file di test con alcuni scenari
+        with open(input_file, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow(["id", "event_size", "organizers", "time", "budget", "alpha",
+                            "perturbation_level_org", "perturbation_level_time", "perturbation_level_cost"])
+            # Aggiungi alcuni scenari di test
+            writer.writerow([1, "small", 1, 2, 100, 0.3, "pos", "no", "low_neg"])
+            writer.writerow([2, "small", 1, 2, 100, 0.5, "no", "no", "no"])
+            writer.writerow([3, "medium", 2, 6, 200, 0.5, "low_neg", "low_neg", "low_neg"])
+            writer.writerow([4, "big", 3, 14, 500, 0.7, "high_neg", "high_neg", "high_neg"])
+
+    # Esegui l'elaborazione di tutti gli scenari
+    results = process_all_scenarios(input_file, output_file)
+
+    end_time = datetime.now()
+    elapsed_time = end_time - start_time
+    print(f"\nQ2S experiment completed in {elapsed_time}")
+    print(f"Processed {len(results)} scenarios")
+    print(f"Results saved to {output_file}")
+
+if __name__ == "__main__":
+    #test_processor()
+    execute_processor()

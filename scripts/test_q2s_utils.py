@@ -2,7 +2,7 @@ import unittest
 from q2s_utils import (
     calculate_plan_impact,
     calculate_all_plan_impacts,
-    calculate_quality_goals_for_scenario,
+    create_quality_goals_from_scenario,  # Nome corretto
     check_plan_validity,
     filter_valid_plans,
     calculate_q2s_matrix,
@@ -27,22 +27,29 @@ class TestQ2SUtils(unittest.TestCase):
             "TimeSpent": {"G1": 1, "G5": 1, "G7": 1, "G8": 1, "G11": 2, "G12": 1, "G13": 2, "G14": 4}
         }
 
-        # Quality goals di base
-        self.base_quality_goals = {
+        # Mapping quality goals a domain variables (nuovo formato)
+        self.quality_goals_mapping = {
+            "QG0": "TotalCost",
+            "QG1": "TotalEffort",
+            "QG2": "TimeSpent"
+        }
+
+        # Quality goals completi per confronto
+        self.complete_quality_goals = {
             "QG0": {"name": "QG0", "domain_variable": "TotalCost", "max_value": 200, "type": "max"},
             "QG1": {"name": "QG1", "domain_variable": "TotalEffort", "max_value": 3, "type": "max"},
             "QG2": {"name": "QG2", "domain_variable": "TimeSpent", "max_value": 6, "type": "max"}
         }
 
-        # Scenario di test
+        # Scenario di test con nuovi parametri
         self.test_scenario = {
             "id": 1,
             "event_size": "small",
-            "organizers": 1,
-            "time": 2,
-            "budget": 100,
+            "cost_constraint": 200,
+            "effort_constraint": 3,
+            "time_constraint": 6,
             "alpha": 0.5,
-            "perturbation_level_org": "no",
+            "perturbation_level_effort": "no",
             "perturbation_level_time": "no",
             "perturbation_level_cost": "no"
         }
@@ -83,15 +90,15 @@ class TestQ2SUtils(unittest.TestCase):
         actual_impacts = calculate_all_plan_impacts(self.test_plans, self.test_contributions)
         self.assertEqual(actual_impacts, expected_impacts, "Gli impatti calcolati non corrispondono")
 
-    def test_calculate_quality_goals_for_scenario(self):
-        """Test per la funzione calculate_quality_goals_for_scenario."""
+    def test_create_quality_goals_from_scenario(self):
+        """Test per la funzione create_quality_goals_from_scenario."""
         # Test con dimensione evento small
         expected_qg = {
             "QG0": {"name": "QG0", "domain_variable": "TotalCost", "max_value": 200, "type": "max"},
             "QG1": {"name": "QG1", "domain_variable": "TotalEffort", "max_value": 3, "type": "max"},
             "QG2": {"name": "QG2", "domain_variable": "TimeSpent", "max_value": 6, "type": "max"}
         }
-        actual_qg = calculate_quality_goals_for_scenario(self.test_scenario, self.base_quality_goals, self.event_size_modifiers)
+        actual_qg = create_quality_goals_from_scenario(self.test_scenario, self.quality_goals_mapping, self.event_size_modifiers)
         self.assertEqual(actual_qg, expected_qg, "Quality goals calcolati non corrispondono per small event")
 
         # Test con dimensione evento medium
@@ -102,33 +109,33 @@ class TestQ2SUtils(unittest.TestCase):
             "QG1": {"name": "QG1", "domain_variable": "TotalEffort", "max_value": 6, "type": "max"},
             "QG2": {"name": "QG2", "domain_variable": "TimeSpent", "max_value": 9, "type": "max"}
         }
-        actual_qg_medium = calculate_quality_goals_for_scenario(medium_scenario, self.base_quality_goals, self.event_size_modifiers)
+        actual_qg_medium = create_quality_goals_from_scenario(medium_scenario, self.quality_goals_mapping, self.event_size_modifiers)
         self.assertEqual(actual_qg_medium, expected_qg_medium, "Quality goals calcolati non corrispondono per medium event")
 
-        # Test con più organizzatori
-        org2_scenario = self.test_scenario.copy()
-        org2_scenario["organizers"] = 2
-        expected_qg_org2 = {
-            "QG0": {"name": "QG0", "domain_variable": "TotalCost", "max_value": 200, "type": "max"},
-            "QG1": {"name": "QG1", "domain_variable": "TotalEffort", "max_value": 3, "type": "max"},
-            "QG2": {"name": "QG2", "domain_variable": "TimeSpent", "max_value": 3, "type": "max"}  # 6/2 = 3
+        # Test con dimensione evento big
+        big_scenario = self.test_scenario.copy()
+        big_scenario["event_size"] = "big"
+        expected_qg_big = {
+            "QG0": {"name": "QG0", "domain_variable": "TotalCost", "max_value": 600, "type": "max"},
+            "QG1": {"name": "QG1", "domain_variable": "TotalEffort", "max_value": 9, "type": "max"},
+            "QG2": {"name": "QG2", "domain_variable": "TimeSpent", "max_value": 12, "type": "max"}
         }
-        actual_qg_org2 = calculate_quality_goals_for_scenario(org2_scenario, self.base_quality_goals, self.event_size_modifiers)
-        self.assertEqual(actual_qg_org2, expected_qg_org2, "Quality goals calcolati non corrispondono con 2 organizzatori")
+        actual_qg_big = create_quality_goals_from_scenario(big_scenario, self.quality_goals_mapping, self.event_size_modifiers)
+        self.assertEqual(actual_qg_big, expected_qg_big, "Quality goals calcolati non corrispondono per big event")
 
     def test_check_plan_validity(self):
         """Test per la funzione check_plan_validity."""
         # Test piano valido
         valid_plan_impact = {"TotalCost": 180, "TotalEffort": 2, "TimeSpent": 5}
-        self.assertTrue(check_plan_validity(valid_plan_impact, self.base_quality_goals), "Piano che dovrebbe essere valido viene considerato non valido")
+        self.assertTrue(check_plan_validity(valid_plan_impact, self.complete_quality_goals), "Piano che dovrebbe essere valido viene considerato non valido")
 
         # Test piano non valido (TotalEffort troppo alto)
         invalid_plan_impact = {"TotalCost": 180, "TotalEffort": 4, "TimeSpent": 5}
-        self.assertFalse(check_plan_validity(invalid_plan_impact, self.base_quality_goals), "Piano che dovrebbe essere non valido viene considerato valido")
+        self.assertFalse(check_plan_validity(invalid_plan_impact, self.complete_quality_goals), "Piano che dovrebbe essere non valido viene considerato valido")
 
         # Test piano non valido (TimeSpent troppo alto)
         invalid_plan_impact2 = {"TotalCost": 180, "TotalEffort": 2, "TimeSpent": 7}
-        self.assertFalse(check_plan_validity(invalid_plan_impact2, self.base_quality_goals), "Piano che dovrebbe essere non valido viene considerato valido")
+        self.assertFalse(check_plan_validity(invalid_plan_impact2, self.complete_quality_goals), "Piano che dovrebbe essere non valido viene considerato valido")
 
     def test_filter_valid_plans(self):
         """Test per la funzione filter_valid_plans."""
@@ -140,7 +147,7 @@ class TestQ2SUtils(unittest.TestCase):
         }
 
         valid_plans, quality_goals = filter_valid_plans(
-            self.test_scenario, all_plan_impacts, self.base_quality_goals, self.event_size_modifiers
+            self.test_scenario, all_plan_impacts, self.quality_goals_mapping, self.event_size_modifiers
         )
 
         # Verifica che solo Plan3 sia valido
@@ -164,7 +171,7 @@ class TestQ2SUtils(unittest.TestCase):
         }
 
         # Calcoliamo la matrice Q2S
-        q2s_matrix = calculate_q2s_matrix(valid_plans, self.base_quality_goals)
+        q2s_matrix = calculate_q2s_matrix(valid_plans, self.complete_quality_goals)
 
         # Verifichiamo la struttura della matrice
         self.assertEqual(len(q2s_matrix), 2, "La matrice Q2S dovrebbe contenere 2 piani")
