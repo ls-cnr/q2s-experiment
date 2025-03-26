@@ -13,17 +13,17 @@ def generate_scenarios():
     #event_size_options = ["small", "medium", "big"]
 
     # Sostituito organizers, time, budget con vincoli diretti
-    cost_constraint_options = [100, 200, 250, 400]  # euro
-    effort_constraint_options = [1, 2, 3, 4]  # unità di sforzo
-    time_constraint_options = [2, 4, 6, 8]  # giorni
+    cost_constraint_options = [270, 225, 180]  # euro
+    effort_constraint_options = [6,5,4]  # unità di sforzo
+    time_constraint_options = [9,7,5]  # giorni
 
     alpha_options = [0.3, 0.5, 0.7]  # alpha values for Q2S
 
     # Define perturbation levels for each quality dimension
     # pos = positive (improvement), no = no change, low_neg/high_neg = negative impacts
-    perturbation_level_cost = ["pos", "no", "low_neg", "high_neg"]
-    perturbation_level_effort = ["pos", "no", "low_neg", "high_neg"]
-    perturbation_level_time = ["pos", "no", "low_neg", "high_neg"]
+    perturbation_level_cost = ["pos", "no", "low_neg", "high_neg", "catastrofic"]
+    perturbation_level_effort = ["pos", "no", "low_neg", "high_neg", "catastrofic"]
+    perturbation_level_time = ["pos", "no", "low_neg", "high_neg", "catastrofic"]
 
     # Generate all combinations of factors
     all_combinations = list(itertools.product(

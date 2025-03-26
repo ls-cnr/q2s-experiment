@@ -21,19 +21,22 @@ PERTURBATION_VALUE = {
         "pos": -1,        # Miglioramento nello sforzo
         "no": 0,          # Nessun cambiamento
         "low_neg": 1,     # Piccolo impatto negativo sullo sforzo
-        "high_neg": 2     # Grande impatto negativo sullo sforzo
+        "high_neg": 2,     # Grande impatto negativo sullo sforzo
+        "catastrofic": 4
     },
     "time": {
-        "pos": -24,       # 1 giorno in meno (in ore)
+        "pos": -1,       # 1 giorno in meno
         "no": 0,          # Nessun cambiamento
-        "low_neg": 24,    # 1 giorno in più (in ore)
-        "high_neg": 48    # 2 giorni in più (in ore)
+        "low_neg": 2,    # 2 giorno in più
+        "high_neg": 4,    # 4 giorni in più
+        "catastrofic": 7
     },
     "cost": {
-        "pos": -50,       # 50 euro in meno
+        "pos": -10,       # 50 euro in meno
         "no": 0,          # Nessun cambiamento
-        "low_neg": 50,    # 50 euro in più
-        "high_neg": 100   # 100 euro in più
+        "low_neg": 10,    # 50 euro in più
+        "high_neg": 20,   # 70 euro in più
+        "catastrofic": 50
     }
 }
 
@@ -159,9 +162,7 @@ def apply_perturbation(plan_impacts, scenario, verbose=False):
         elif "Time" in var:  # Time-related variable
             perturbed_impacts[var] += time_perturbation
         elif "Effort" in var:  # Effort-related variable
-            # Apply as multiplier for effort (similar to previous implementation)
-            if effort_perturbation != 0:
-                perturbed_impacts[var] *= (1 + 0.15 * effort_perturbation)
+            perturbed_impacts[var] += effort_perturbation
 
         if verbose and perturbed_impacts[var] != original_value:
             print(f"    {var}: {original_value:.2f} -> {perturbed_impacts[var]:.2f}")
