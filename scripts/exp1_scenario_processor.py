@@ -17,26 +17,26 @@ from q2s_utils import (
 # ---------------------------------------------------------------------------
 
 PERTURBATION_VALUE = {
+    "cost": {
+        "pos": -20,       # 50 euro in meno
+        "no": 0,          # Nessun cambiamento
+        "low_neg": 20,    # 50 euro in più
+        "high_neg": 35,   # 70 euro in più
+        "catastrofic": 50
+    },
     "effort": {  #
-        "pos": -1,        # Miglioramento nello sforzo
+        "pos": -2,        # Miglioramento nello sforzo
         "no": 0,          # Nessun cambiamento
         "low_neg": 1,     # Piccolo impatto negativo sullo sforzo
         "high_neg": 2,     # Grande impatto negativo sullo sforzo
         "catastrofic": 4
     },
     "time": {
-        "pos": -1,       # 1 giorno in meno
+        "pos": -3,       # 1 giorno in meno
         "no": 0,          # Nessun cambiamento
-        "low_neg": 2,    # 2 giorno in più
-        "high_neg": 4,    # 4 giorni in più
-        "catastrofic": 7
-    },
-    "cost": {
-        "pos": -10,       # 50 euro in meno
-        "no": 0,          # Nessun cambiamento
-        "low_neg": 10,    # 50 euro in più
-        "high_neg": 20,   # 70 euro in più
-        "catastrofic": 50
+        "low_neg": 1,    # 2 giorno in più
+        "high_neg": 2,    # 4 giorni in più
+        "catastrofic": 4
     }
 }
 
@@ -670,13 +670,13 @@ def test_processor():
     hardcoded_scenario = {
         "id": 39,
         "event_size": "small",
-        "cost_constraint": 200,
-        "effort_constraint": 4,
-        "time_constraint": 6,
+        "cost_constraint": 250,
+        "effort_constraint": 12,
+        "time_constraint": 11,
         "alpha": 0.5,
         "perturbation_level_cost": "low_neg",
         "perturbation_level_effort": "low_neg",
-        "perturbation_level_time": "no"
+        "perturbation_level_time": "low_neg"
     }
 
     # Load data
@@ -731,5 +731,5 @@ def execute_processor():
     print(f"Results saved to {output_file}")
 
 if __name__ == "__main__":
-    #test_processor()
-    execute_processor()
+    test_processor()
+    #execute_processor()

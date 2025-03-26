@@ -13,9 +13,9 @@ def generate_scenarios():
     #event_size_options = ["small", "medium", "big"]
 
     # Sostituito organizers, time, budget con vincoli diretti
-    cost_constraint_options = [270, 225, 180]  # euro
-    effort_constraint_options = [6,5,4]  # unità di sforzo
-    time_constraint_options = [9,7,5]  # giorni
+    cost_constraint_options = [340, 250, 200]  # euro
+    effort_constraint_options = [14,12,10]  # unità di sforzo
+    time_constraint_options = [13,11,9]  # giorni
 
     alpha_options = [0.3, 0.5, 0.7]  # alpha values for Q2S
 
