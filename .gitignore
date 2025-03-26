@@ -26,9 +26,9 @@ var/
 results/
 
 # Ma traccia questi file specifici
-!data/exp1_plans.csv
-!data/exp1_contributions.csv
-!data/exp1_quality_goals.csv
+!script/data/exp1_plans.csv
+!script/data/exp1_contributions.csv
+!script/data/exp1_quality_goals.csv
 
 
 # Virtual Environment
