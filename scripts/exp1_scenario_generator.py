@@ -1,29 +1,35 @@
 import csv
 import os
+import sys
 import itertools
+import argparse
 from datetime import datetime
+from q2s_utils import (
+    get_scenario_generator_options,
+    get_simulation_settings,
+    load_json_config
+)
 
-def generate_scenarios():
+def generate_scenarios(config_file):
     """
     Generate scenarios for Q2S Experiment 1 with direct quality constraints
     instead of indirect parameters like organizers and budget.
+
+    Args:
+        config_file: Path to the configuration file.
     """
-    # Define factor values
-    event_size_options = ["medium"]
-    #event_size_options = ["small", "medium", "big"]
+    # Load options from config file
+    options = get_scenario_generator_options(config_file=config_file)
 
-    # Sostituito organizers, time, budget con vincoli diretti
-    cost_constraint_options = [340, 250, 200]  # euro
-    effort_constraint_options = [14,12,10]  # unità di sforzo
-    time_constraint_options = [13,11,9]  # giorni
-
-    alpha_options = [0.3, 0.5, 0.7]  # alpha values for Q2S
-
-    # Define perturbation levels for each quality dimension
-    # pos = positive (improvement), no = no change, low_neg/high_neg = negative impacts
-    perturbation_level_cost = ["pos", "no", "low_neg", "high_neg", "catastrofic"]
-    perturbation_level_effort = ["pos", "no", "low_neg", "high_neg", "catastrofic"]
-    perturbation_level_time = ["pos", "no", "low_neg", "high_neg", "catastrofic"]
+    # Extract options
+    event_size_options = options.get("event_size_options", ["medium"])
+    cost_constraint_options = options.get("cost_constraint_options", [200])
+    effort_constraint_options = options.get("effort_constraint_options", [3])
+    time_constraint_options = options.get("time_constraint_options", [6])
+    alpha_options = options.get("alpha_options", [0.5])
+    perturbation_level_cost = options.get("perturbation_level_cost", ["no", "low_neg"])
+    perturbation_level_effort = options.get("perturbation_level_effort", ["no", "low_neg"])
+    perturbation_level_time = options.get("perturbation_level_time", ["no", "low_neg"])
 
     # Generate all combinations of factors
     all_combinations = list(itertools.product(
@@ -87,24 +93,60 @@ def save_to_csv(headers, rows, filename=None):
 
 def main():
     """Main function to generate and save scenarios."""
+    # Set up command line argument parsing
+    parser = argparse.ArgumentParser(description='Generate scenarios for Q2S experiment')
+    parser.add_argument('config_file', help='Path to the JSON configuration file')
+    args = parser.parse_args()
+
+    config_file = args.config_file
+
+    # Check if the config file exists
+    if not os.path.exists(config_file):
+        print(f"Error: Configuration file '{config_file}' not found.")
+        sys.exit(1)
+
+    print(f"Using configuration from: {config_file}")
+
+    # Verify we can load the JSON
+    try:
+        config = load_json_config(config_file)
+        if not config:
+            print(f"Error: Configuration file '{config_file}' is empty or invalid.")
+            sys.exit(1)
+    except Exception as e:
+        print(f"Error loading configuration file: {e}")
+        sys.exit(1)
+
     print("Generating scenarios for Q2S Experiment 1 with direct constraints...")
-    headers, rows = generate_scenarios()
+
+    # Generate scenarios using config
+    headers, rows = generate_scenarios(config_file)
+
+    # Get output settings from config
+    settings = get_simulation_settings(config_file=config_file)
+
+    # Extract output directory and filename
+    output_dir = settings.get("output_directory", "data")
+    scenarios_filename = settings.get("scenarios_filename", "scenarios.csv")
+
+    print(f"Output directory: {output_dir}")
+    print(f"Scenarios filename: {scenarios_filename}")
 
     # Create output directory
-    os.makedirs("data", exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
     # Save all scenarios to a CSV file
-    filename = os.path.join("data", "scenarios.csv")
-    save_to_csv(headers, rows, filename)
+    output_path = os.path.join(output_dir, scenarios_filename)
+    save_to_csv(headers, rows, output_path)
 
-    print("Scenario generation complete.")
+    print(f"Scenario generation complete. Saved to {output_path}")
 
     # Calculate and print the total number of scenarios
     total_combinations = len(rows)
     print(f"Total number of scenario combinations: {total_combinations}")
 
     # Check file size
-    file_size_bytes = os.path.getsize(filename)
+    file_size_bytes = os.path.getsize(output_path)
     file_size_mb = file_size_bytes / (1024 * 1024)
     print(f"CSV file size: {file_size_mb:.2f} MB")
 

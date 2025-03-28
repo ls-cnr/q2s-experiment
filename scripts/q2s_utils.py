@@ -1,24 +1,157 @@
 import pandas as pd
+import json
+import os
+
+
+# ---------------------------------------------------------------------------
+# JSON CONFIG LOADING
+# ---------------------------------------------------------------------------
+
+def load_json_config(config_file):
+    """
+    Load configuration from JSON file.
+    Returns the entire configuration dictionary.
+    """
+    try:
+        with open(config_file, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        print(f"Loaded configuration from {config_file}")
+        return config
+    except Exception as e:
+        print(f"Error loading configuration: {e}")
+        return {}
 
 # ---------------------------------------------------------------------------
 # DATA LOADING FUNCTIONS
 # ---------------------------------------------------------------------------
+def get_file_paths(config=None, config_file=None):
+    """
+    Get file paths for data sources from config.
 
-EXP1_EVENT_SIZE_MODIFIERS = {
-    "small": {"TotalCost": 1.0, "TimeSpent": 1.0, "TotalEffort": 1.0},
-    "medium": {"TotalCost": 2.0, "TimeSpent": 1.5, "TotalEffort": 2.0},
-    "big": {"TotalCost": 3.0, "TimeSpent": 2.0, "TotalEffort": 3.0}
-}
+    Args:
+        config: Configuration dictionary (optional)
+        config_file: Path to the configuration file (optional)
+    """
+    if config is None and config_file is not None:
+        config = load_json_config(config_file)
 
+    if config is None:
+        return None
+
+    return config.get("file_paths")
+
+def get_quality_goals_mapping(config=None, config_file=None):
+    """
+    Get quality goals mapping from config.
+
+    Args:
+        config: Configuration dictionary (optional)
+        config_file: Path to the configuration file (optional)
+    """
+    if config is None and config_file is not None:
+        config = load_json_config(config_file)
+
+    if config is None:
+        return None
+
+    return config.get("quality_goals")
+
+def get_event_size_modifiers(config=None, config_file=None):
+    """
+    Get event size modifiers from config.
+
+    Args:
+        config: Configuration dictionary (optional)
+        config_file: Path to the configuration file (optional)
+    """
+    if config is None and config_file is not None:
+        config = load_json_config(config_file)
+
+    if config is None:
+        return None
+
+    return config.get("event_size_modifiers")
+
+def get_scenario_generator_options(config=None, config_file=None):
+    """
+    Get scenario generator options from config.
+
+    Args:
+        config: Configuration dictionary (optional)
+        config_file: Path to the configuration file (optional)
+    """
+    if config is None and config_file is not None:
+        config = load_json_config(config_file)
+
+    if config is None:
+        return None
+
+    return config.get("scenario_generator")
+
+def get_perturbation_values(config=None, config_file=None):
+    """
+    Get perturbation values from config.
+
+    Args:
+        config: Configuration dictionary (optional)
+        config_file: Path to the configuration file (optional)
+    """
+    if config is None and config_file is not None:
+        config = load_json_config(config_file)
+
+    if config is None:
+        return None
+
+    return config.get("perturbation_values")
+
+def get_simulation_settings(config=None, config_file=None):
+    """
+    Get simulation settings from config.
+
+    Args:
+        config: Configuration dictionary (optional)
+        config_file: Path to the configuration file (optional)
+    """
+    if config is None and config_file is not None:
+        config = load_json_config(config_file)
+
+    if config is None:
+        return None
+
+    return config.get("simulation_settings")
 # ---------------------------------------------------------------------------
 # DATA LOADING FUNCTIONS
 # ---------------------------------------------------------------------------
 
-def load_plans(file_path):
+# Default event size modifiers - use from config instead
+# EXP1_EVENT_SIZE_MODIFIERS = get_event_size_modifiers()
+
+
+def load_plans(file_path=None, config_file=None):
     """
     Load plans from CSV file.
     Returns a dictionary mapping plan IDs to lists of goals.
+
+    Args:
+        file_path: Path to the plans CSV file. If None, path is taken from config file.
+        config_file: Path to the configuration file.
     """
+    # Get file path from config if not provided
+    if file_path is None and config_file is not None:
+        file_paths = get_file_paths(config_file=config_file)
+        if file_paths is None:
+            print(f"Error: Could not get file paths from configuration file {config_file}")
+            return {}
+
+        file_path = file_paths.get("plans")
+        if file_path is None:
+            print("Error: No 'plans' path specified in configuration")
+            return {}
+
+    if file_path is None:
+        print("Error: No file path provided for plans")
+        return {}
+
     plans = {}
 
     try:
@@ -38,11 +171,31 @@ def load_plans(file_path):
         print(f"Error loading plans: {e}")
         return {}
 
-def load_contributions(file_path):
+def load_contributions(file_path=None, config_file=None):
     """
     Load goal contributions to domain variables from CSV file.
     Returns a dictionary mapping domain variables to dictionaries of goal contributions.
+
+    Args:
+        file_path: Path to the contributions CSV file. If None, path is taken from config file.
+        config_file: Path to the configuration file.
     """
+    # Get file path from config if not provided
+    if file_path is None and config_file is not None:
+        file_paths = get_file_paths(config_file=config_file)
+        if file_paths is None:
+            print(f"Error: Could not get file paths from configuration file {config_file}")
+            return {}
+
+        file_path = file_paths.get("contributions")
+        if file_path is None:
+            print("Error: No 'contributions' path specified in configuration")
+            return {}
+
+    if file_path is None:
+        print("Error: No file path provided for contributions")
+        return {}
+
     contributions = {}
 
     try:
@@ -62,29 +215,6 @@ def load_contributions(file_path):
         print(f"Error loading contributions: {e}")
         return {}
 
-def load_quality_goals_mapping(file_path):
-    """
-    Load quality goals mapping from CSV file.
-    Returns a dictionary mapping quality goal IDs to their domain variables.
-
-    New version: now the file only contains the mapping between QG and domain variables,
-    without the constraints that will come from the scenarios.
-    """
-    quality_goals_mapping = {}
-
-    try:
-        df = pd.read_csv(file_path)
-        # Each row defines a quality goal and its domain variable
-        for _, row in df.iterrows():
-            qg_id = row['Quality Goals']
-            domain_var = row['Domain Variable']
-            quality_goals_mapping[qg_id] = domain_var
-
-        print(f"Loaded {len(quality_goals_mapping)} quality goals mappings from {file_path}")
-        return quality_goals_mapping
-    except Exception as e:
-        print(f"Error loading quality goals mappings: {e}")
-        return {}
 
 # ---------------------------------------------------------------------------
 # PLAN IMPACT CALCULATION
@@ -124,7 +254,7 @@ def calculate_all_plan_impacts(plans, contributions):
 # QUALITY GOAL CALCULATION AND PLAN FILTERING
 # ---------------------------------------------------------------------------
 
-def create_quality_goals_from_scenario(scenario, quality_goals_mapping, event_size_modifiers=None):
+def create_quality_goals_from_scenario(scenario, quality_goals_mapping, event_size_modifiers=None, config_file=None):
     """
     Create quality goals directly from scenario constraints.
     Returns a dictionary of quality goals with their constraint values.
@@ -133,6 +263,7 @@ def create_quality_goals_from_scenario(scenario, quality_goals_mapping, event_si
         scenario: Dictionary with scenario parameters including direct constraints
         quality_goals_mapping: Mapping between quality goal IDs and domain variables
         event_size_modifiers: Optional dictionary of modifiers for different event sizes
+        config_file: Path to the configuration file
     """
     event_size = scenario["event_size"]
 
@@ -148,9 +279,19 @@ def create_quality_goals_from_scenario(scenario, quality_goals_mapping, event_si
 
     # Default event size modifiers if none provided
     if event_size_modifiers is None:
-        event_size_modifiers = EXP1_EVENT_SIZE_MODIFIERS
+        # Create default modifiers if they're not available from config
+        event_size_modifiers = {
+            "small": {"TotalCost": 1.0, "TimeSpent": 1.0, "TotalEffort": 1.0},
+            "medium": {"TotalCost": 2.0, "TimeSpent": 1.5, "TotalEffort": 2.0},
+            "big": {"TotalCost": 3.0, "TimeSpent": 2.0, "TotalEffort": 3.0}
+        }
 
-    size_mod = event_size_modifiers[event_size]
+    # Make sure the event size exists in modifiers
+    if event_size not in event_size_modifiers:
+        print(f"Warning: Event size '{event_size}' not found in modifiers, using 'small' defaults")
+        size_mod = event_size_modifiers.get("small", {"TotalCost": 1.0, "TimeSpent": 1.0, "TotalEffort": 1.0})
+    else:
+        size_mod = event_size_modifiers[event_size]
 
     # Create quality goals based on the mapping and scenario constraints
     for qg_id, domain_var in quality_goals_mapping.items():
@@ -168,7 +309,7 @@ def create_quality_goals_from_scenario(scenario, quality_goals_mapping, event_si
         # Get the constraint value from scenario
         constraint_value = scenario[constraint_field]
 
-        # Apply event size modifier
+        # Apply event size modifier if available for this domain variable
         if domain_var in size_mod:
             constraint_value *= size_mod[domain_var]
 
@@ -181,6 +322,7 @@ def create_quality_goals_from_scenario(scenario, quality_goals_mapping, event_si
         }
 
     return quality_goals
+
 
 def check_plan_validity(plan_impacts, quality_goals):
     """Check if a plan satisfies all quality constraints."""

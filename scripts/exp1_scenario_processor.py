@@ -6,206 +6,14 @@ from datetime import datetime
 import pandas as pd
 
 from q2s_utils import (
-    load_plans, load_contributions, load_quality_goals_mapping,
+    load_plans, load_contributions, get_quality_goals_mapping,
     calculate_all_plan_impacts,
     check_plan_validity, filter_valid_plans,
     calculate_q2s_matrix, q2s_selection_strategy
 )
 
-# ---------------------------------------------------------------------------
-# EXP1 SPECIFIC CONSTANTS
-# ---------------------------------------------------------------------------
+import exp1_utils
 
-PERTURBATION_VALUE = {
-    "cost": {
-        "pos": -20,       # 50 euro in meno
-        "no": 0,          # Nessun cambiamento
-        "low_neg": 20,    # 50 euro in più
-        "high_neg": 35,   # 70 euro in più
-        "catastrofic": 50
-    },
-    "effort": {  #
-        "pos": -2,        # Miglioramento nello sforzo
-        "no": 0,          # Nessun cambiamento
-        "low_neg": 1,     # Piccolo impatto negativo sullo sforzo
-        "high_neg": 2,     # Grande impatto negativo sullo sforzo
-        "catastrofic": 4
-    },
-    "time": {
-        "pos": -3,       # 1 giorno in meno
-        "no": 0,          # Nessun cambiamento
-        "low_neg": 1,    # 2 giorno in più
-        "high_neg": 2,    # 4 giorni in più
-        "catastrofic": 4
-    }
-}
-
-# Number of simulation runs per scenario for random strategy
-NUM_RANDOM_RUNS = 10
-
-# ---------------------------------------------------------------------------
-# PLAN SELECTION STRATEGIES (EXP1 SPECIFIC)
-# ---------------------------------------------------------------------------
-
-def avg_only_strategy(q2s_matrix, verbose=False):
-    """
-    Select plan using only the average satisfaction.
-    """
-    if not q2s_matrix:
-        if verbose:
-            print("  WARNING: Empty Q2S matrix passed to avg_only_strategy")
-        return None, 0
-
-    plan_scores = {}
-    for plan_id, distances in q2s_matrix.items():
-        distance_values = list(distances.values())
-        if not distance_values:  # Skip if no distance values
-            continue
-
-        avg_sat = sum(distance_values) / len(distance_values)
-        plan_scores[plan_id] = avg_sat
-
-    # Return the plan with the highest average satisfaction
-    if not plan_scores:  # Check if plan_scores is empty
-        if verbose:
-            print("  WARNING: No valid plan scores in avg_only_strategy")
-        return None, 0
-
-    best_plan_id = max(plan_scores, key=plan_scores.get)
-    if verbose:
-        print(f"  AvgSat strategy selected plan {best_plan_id} with score {plan_scores[best_plan_id]:.4f}")
-    return best_plan_id, plan_scores[best_plan_id]
-
-def min_only_strategy(q2s_matrix, verbose=False):
-    """
-    Select plan using only the minimum satisfaction.
-    """
-    if not q2s_matrix:
-        if verbose:
-            print("  WARNING: Empty Q2S matrix passed to min_only_strategy")
-        return None, 0
-
-    plan_scores = {}
-    for plan_id, distances in q2s_matrix.items():
-        distance_values = list(distances.values())
-        if not distance_values:  # Skip if no distance values
-            continue
-
-        min_sat = min(distance_values)
-        plan_scores[plan_id] = min_sat
-
-    # Return the plan with the highest minimum satisfaction
-    if not plan_scores:  # Check if plan_scores is empty
-        if verbose:
-            print("  WARNING: No valid plan scores in min_only_strategy")
-        return None, 0
-
-    best_plan_id = max(plan_scores, key=plan_scores.get)
-    if verbose:
-        print(f"  MinSat strategy selected plan {best_plan_id} with score {plan_scores[best_plan_id]:.4f}")
-    return best_plan_id, plan_scores[best_plan_id]
-
-def random_strategy(q2s_matrix, verbose=False):
-    """
-    Select a random plan from valid plans.
-    """
-    if not q2s_matrix:
-        if verbose:
-            print("  WARNING: Empty Q2S matrix passed to random_strategy")
-        return None, 0
-
-    plan_ids = list(q2s_matrix.keys())
-    if not plan_ids:  # Check if no plans available
-        if verbose:
-            print("  WARNING: No valid plans in random_strategy")
-        return None, 0
-
-    plan_id = random.choice(plan_ids)
-    distance_values = list(q2s_matrix[plan_id].values())
-    if not distance_values:  # Check if no distance values
-        if verbose:
-            print(f"  Random strategy selected plan {plan_id} but no distance values found")
-        return plan_id, 0
-
-    avg_sat = sum(distance_values) / len(distance_values)
-    if verbose:
-        print(f"  Random strategy selected plan {plan_id} with avg score {avg_sat:.4f}")
-    return plan_id, avg_sat
-
-# ---------------------------------------------------------------------------
-# PERTURBATION APPLICATION
-# ---------------------------------------------------------------------------
-
-def apply_perturbation(plan_impacts, scenario, verbose=False):
-    """
-    Apply perturbations based on scenario parameters.
-    """
-    # Deep copy the impacts to avoid modifying the original
-    perturbed_impacts = dict(plan_impacts)
-
-    # Get perturbation values for each dimension
-    # Renamed from org to effort
-    effort_perturbation = PERTURBATION_VALUE["effort"][scenario["perturbation_level_effort"]]
-    time_perturbation = PERTURBATION_VALUE["time"][scenario["perturbation_level_time"]]
-    cost_perturbation = PERTURBATION_VALUE["cost"][scenario["perturbation_level_cost"]]
-
-    if verbose:
-        print(f"  Applying perturbations: effort={effort_perturbation}, time={time_perturbation}, cost={cost_perturbation}")
-
-    # Apply perturbations to domain variables
-    for var in perturbed_impacts:
-        original_value = perturbed_impacts[var]
-
-        # Apply the appropriate perturbation based on domain variable type
-        if "Cost" in var:  # Cost-related variable
-            perturbed_impacts[var] += cost_perturbation
-        elif "Time" in var:  # Time-related variable
-            perturbed_impacts[var] += time_perturbation
-        elif "Effort" in var:  # Effort-related variable
-            perturbed_impacts[var] += effort_perturbation
-
-        if verbose and perturbed_impacts[var] != original_value:
-            print(f"    {var}: {original_value:.2f} -> {perturbed_impacts[var]:.2f}")
-
-    return perturbed_impacts
-
-def evaluate_plan_under_perturbation(plan_id, plan, quality_goals, scenario, verbose=False):
-    """
-    Evaluate a plan under perturbation.
-    """
-    if verbose:
-        print(f"  Evaluating plan {plan_id} under perturbation...")
-
-    # Apply perturbation to plan impacts
-    perturbed_impacts = apply_perturbation(plan["impact"], scenario, verbose)
-
-    # Check if perturbed plan still satisfies constraints
-    valid = True
-    margins = []
-
-    for qg_id, goal in quality_goals.items():
-        domain_var = goal["domain_variable"]
-        if domain_var in perturbed_impacts:
-            impact_value = perturbed_impacts[domain_var]
-
-            if goal["type"] == "max":
-                margin = (goal["max_value"] - impact_value) / goal["max_value"]
-                margins.append(margin)
-                if impact_value > goal["max_value"]:
-                    valid = False
-                    if verbose:
-                        print(f"    {qg_id}: Constraint violated! {impact_value:.2f} > {goal['max_value']:.2f}")
-                elif verbose:
-                    print(f"    {qg_id}: Constraint satisfied. {impact_value:.2f} <= {goal['max_value']:.2f} (margin: {margin:.4f})")
-
-    success_rate = 1 if valid else 0
-    avg_margin = sum(margins) / len(margins) if margins else 0
-
-    if verbose:
-        print(f"    Plan is {'valid' if valid else 'invalid'} under perturbation")
-        print(f"    Average margin: {avg_margin:.4f}")
-
-    return success_rate, avg_margin
 
 # ---------------------------------------------------------------------------
 # SCENARIO PROCESSING
@@ -463,7 +271,7 @@ def process_scenario(scenario, plans, contributions, quality_goals_mapping, verb
     # Step 3: Apply Q2S strategy
     q2s_plan_id, q2s_score = q2s_selection_strategy(q2s_matrix, alpha)
     if q2s_plan_id:
-        q2s_success, q2s_margins = evaluate_plan_under_perturbation(
+        q2s_success, q2s_margins = exp1_utils.evaluate_plan_under_perturbation(
             q2s_plan_id, valid_plans[q2s_plan_id], quality_goals, scenario, verbose and False  # Non visualizzare dettagli interni
         )
         if verbose:
@@ -474,9 +282,9 @@ def process_scenario(scenario, plans, contributions, quality_goals_mapping, verb
         q2s_success, q2s_margins = 0, 0
 
     # Step 4: Apply AvgSat strategy
-    avg_plan_id, avg_score = avg_only_strategy(q2s_matrix, verbose and False)
+    avg_plan_id, avg_score = exp1_utils.avg_only_strategy(q2s_matrix, verbose and False)
     if avg_plan_id:
-        avg_success, avg_margins = evaluate_plan_under_perturbation(
+        avg_success, avg_margins = exp1_utils.evaluate_plan_under_perturbation(
             avg_plan_id, valid_plans[avg_plan_id], quality_goals, scenario, verbose and False
         )
         if verbose:
@@ -487,9 +295,9 @@ def process_scenario(scenario, plans, contributions, quality_goals_mapping, verb
         avg_success, avg_margins = 0, 0
 
     # Step 5: Apply MinSat strategy
-    min_plan_id, min_score = min_only_strategy(q2s_matrix, verbose and False)
+    min_plan_id, min_score = exp1_utils.min_only_strategy(q2s_matrix, verbose and False)
     if min_plan_id:
-        min_success, min_margins = evaluate_plan_under_perturbation(
+        min_success, min_margins = exp1_utils.evaluate_plan_under_perturbation(
             min_plan_id, valid_plans[min_plan_id], quality_goals, scenario, verbose and False
         )
         if verbose:
@@ -505,9 +313,9 @@ def process_scenario(scenario, plans, contributions, quality_goals_mapping, verb
     random_margins = []
 
     for i in range(NUM_RANDOM_RUNS):  # Multiple random trials
-        random_plan_id, _ = random_strategy(q2s_matrix, verbose and False)  # Nessun output verboso per i trial random
+        random_plan_id, _ = exp1_utils.random_strategy(q2s_matrix, verbose and False)  # Nessun output verboso per i trial random
         if random_plan_id:
-            success, margin = evaluate_plan_under_perturbation(
+            success, margin = exp1_utils.evaluate_plan_under_perturbation(
                 random_plan_id, valid_plans[random_plan_id], quality_goals, scenario, verbose and False
             )
             random_successes.append(success)
@@ -670,9 +478,9 @@ def test_processor():
     hardcoded_scenario = {
         "id": 39,
         "event_size": "small",
-        "cost_constraint": 250,
-        "effort_constraint": 6,
-        "time_constraint": 7,
+        "cost_constraint": 210,
+        "effort_constraint": 4,
+        "time_constraint": 9,
         "alpha": 0.5,
         "perturbation_level_cost": "low_neg",
         "perturbation_level_effort": "low_neg",
@@ -731,5 +539,5 @@ def execute_processor():
     print(f"Results saved to {output_file}")
 
 if __name__ == "__main__":
-    test_processor()
-    #execute_processor()
+    #test_processor()
+    execute_processor()
