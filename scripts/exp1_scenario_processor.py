@@ -470,41 +470,6 @@ def process_all_scenarios(input_file="data/scenarios.csv", output_file="data/res
 
     return results
 
-def test_processor():
-    print("Starting Q2S test with hardcoded scenario...")
-    start_time = datetime.now()
-
-    # Create hardcoded scenario with the new format
-    hardcoded_scenario = {
-        "id": 39,
-        "event_size": "small",
-        "cost_constraint": 210,
-        "effort_constraint": 4,
-        "time_constraint": 9,
-        "alpha": 0.5,
-        "perturbation_level_cost": "low_neg",
-        "perturbation_level_effort": "low_neg",
-        "perturbation_level_time": "low_neg"
-    }
-
-    # Load data
-    plans = load_plans("data/exp1_plans.csv")
-    contributions = load_contributions("data/exp1_contributions.csv")
-    quality_goals_mapping = load_quality_goals_mapping("data/exp1_quality_goals.csv")
-
-    # Process the hardcoded scenario with verbose output
-    result = process_scenario(
-        hardcoded_scenario,
-        plans,
-        contributions,
-        quality_goals_mapping,
-        verbose=True,
-        output_file="data/exp1_test_scenario_result.csv"
-    )
-
-    end_time = datetime.now()
-    print(f"\nTest processing completed in {end_time - start_time}")
-
 def execute_processor():
     print("Starting Q2S experiment: processing all scenarios...")
     start_time = datetime.now()
