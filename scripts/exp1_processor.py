@@ -68,7 +68,8 @@ def process_scenario(scenario, plans, contributions, quality_goals_mapping, pert
     # Create quality goals from scenario constraints
     quality_goals = create_quality_goals_from_scenario(
         scenario,
-        quality_goals_mapping
+        quality_goals_mapping,
+
     )
     print_quality_goals(quality_goals, verbose)
 

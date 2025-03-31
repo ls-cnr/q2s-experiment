@@ -34,13 +34,13 @@ def main():
     scenario = {
         "id": 39,
         "event_size": "medium",
-        "cost_constraint": 210,
-        "effort_constraint": 4,
+        "cost_constraint": 270,
+        "effort_constraint": 6,
         "time_constraint": 9,
         "alpha": 0.5,
-        "perturbation_level_cost": "low_neg",
+        "perturbation_level_cost": "pos",
         "perturbation_level_effort": "low_neg",
-        "perturbation_level_time": "low_neg"
+        "perturbation_level_time": "no"
     }
 
     print(f"Created test scenario with ID {scenario['id']}")
