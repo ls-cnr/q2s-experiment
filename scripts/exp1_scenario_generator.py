@@ -21,6 +21,10 @@ def generate_scenarios(config_file):
     # Load options from config file
     options = get_scenario_generator_options(config_file=config_file)
 
+    if options is None:
+        print("Error: No options found in configuration file.")
+        return None
+
     # Extract options
     event_size_options = options.get("event_size_options", ["medium"])
     cost_constraint_options = options.get("cost_constraint_options", [200])
@@ -118,6 +122,10 @@ def main():
         sys.exit(1)
 
     print("Generating scenarios for Q2S Experiment 1 with direct constraints...")
+
+    if not config:
+        print("Error: No configuration found.")
+        sys.exit(1)
 
     # Generate scenarios using config
     headers, rows = generate_scenarios(config_file)

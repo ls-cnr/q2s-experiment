@@ -1,6 +1,4 @@
 import random
-import numpy as np
-
 
 # ---------------------------------------------------------------------------
 # PLAN SELECTION STRATEGIES (EXP1 SPECIFIC)
