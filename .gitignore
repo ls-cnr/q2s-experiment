@@ -20,15 +20,6 @@ var/
 .installed.cfg
 *.egg
 
-# Esclude tutti i file CSV
-*.csv
-
-results/
-
-# Ma traccia questi file specifici
-!scripts/data/*.csv
-!scripts/data/*.json
-
 
 # Virtual Environment
 venv/
