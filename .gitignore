@@ -41,6 +41,7 @@ env/
 .env/
 pyenv/
 .pyenv/
+q2s-env/
 
 # Python bytecode e cache
 __pycache__/
