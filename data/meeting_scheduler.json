@@ -62,7 +62,6 @@
     ]
   },
   "simulation_settings": {
-    "num_random_runs": 10,
     "output_directory": "meeting_scheduler_results",
     "scenarios_filename": "scenarios.csv",
     "results_filename": "exp1_results.csv"
