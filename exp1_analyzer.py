@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
 from q2s_utils import load_json_config
+import math
 
 def load_results(file_path):
     """
@@ -87,14 +88,28 @@ def compare_strategies(df):
     valid_df = df[df['num_valid_plans'] > 0].copy()
     print(f"Analyzing {len(valid_df)} scenarios with at least one valid plan")
 
-    # Calculate average success rates and margins for each strategy
+    # Calculate average success rates, margins and margin variance for each strategy
     strategies = ['Score', 'Avg', 'Min', 'Rnd']
     success_rates = {}
     margins = {}
+    margin_variances = {}  # New dictionary for margin variances
 
     for strategy in strategies:
-        success_rates[strategy] = valid_df[f'{strategy}Plan_success'].mean() * 100  # In percentage
-        margins[strategy] = valid_df[f'{strategy}Plan_margins'].mean()
+        # Calculate success rate (percentage of successful plans)
+        success_rates[strategy] = valid_df[f'{strategy}Plan_success'].mean() * 100
+
+        # Calculate average margin
+        # First, we need to replace margins of unsuccessful plans (which are 0) with NaN
+        # to calculate the correct statistics only for successful plans
+        successful_margins = valid_df.loc[valid_df[f'{strategy}Plan_success'] == 1, f'{strategy}Plan_margins']
+
+        # Calculate mean and variance if there are any successful plans
+        if len(successful_margins) > 0:
+            margins[strategy] = successful_margins.mean()
+            margin_variances[strategy] = successful_margins.var()  # Calculate variance
+        else:
+            margins[strategy] = 0
+            margin_variances[strategy] = 0
 
     # Print results sorted by success rate
     print("\nSuccess rates (percentage of plans that remain valid after perturbation):")
@@ -105,11 +120,16 @@ def compare_strategies(df):
     for strategy, margin in sorted(margins.items(), key=lambda x: x[1], reverse=True):
         print(f"  {strategy}: {margin:.4f}")
 
+    print("\nMargin variances (variability of margins):")
+    for strategy, variance in sorted(margin_variances.items(), key=lambda x: x[1]):
+        print(f"  {strategy}: {variance:.6f}")
+
     # Create a dataframe with the results for more detailed analysis
     result_df = pd.DataFrame({
         'Strategy': strategies,
         'Success Rate (%)': [success_rates[s] for s in strategies],
-        'Average Margin': [margins[s] for s in strategies]
+        'Average Margin': [margins[s] for s in strategies],
+        'Margin Variance': [margin_variances[s] for s in strategies]
     })
 
     return result_df
@@ -161,6 +181,415 @@ def analyze_by_perturbation_level(df):
                 print(f"    {strategy}: Success = {success_rate:.2f}%, Margin = {margin:.4f}")
 
     return results
+
+def analyze_by_perturbation_level_with_alfas(df):
+    """
+    Analyze how the Score strategy with different alpha values performs under various perturbation levels.
+
+    Args:
+        df (DataFrame): Pandas DataFrame with experiment results
+
+    Returns:
+        dict: Dictionary with results by perturbation level and alpha
+    """
+    print("\n===== ANALYSIS BY PERTURBATION LEVEL WITH ALPHA BREAKDOWN =====")
+
+    # Filter scenarios with at least one valid plan
+    valid_df = df[df['num_valid_plans'] > 0].copy()
+
+    # Get perturbation columns
+    perturbation_cols = [col for col in df.columns if col.endswith("_perturbation")]
+
+    # Get alpha values
+    alpha_values = sorted(valid_df['alpha'].unique())
+
+    # Create a dictionary to store results
+    results = {}
+
+    # For each perturbation type
+    for pert_col in perturbation_cols:
+        domain_var = pert_col.replace("_perturbation", "")
+        print(f"\n{pert_col}:")
+        results[pert_col] = {}
+
+        # For each perturbation level
+        for level in valid_df[pert_col].unique():
+            level_df = valid_df[valid_df[pert_col] == level]
+
+            if len(level_df) == 0:
+                continue
+
+            results[pert_col][level] = {}
+            print(f"  {level} ({len(level_df)} scenarios):")
+
+            # Calculate success rates for Avg, Min, and Rnd strategies
+            other_strategies = ['Avg', 'Min', 'Rnd']
+            for strategy in other_strategies:
+                success_rate = level_df[f'{strategy}Plan_success'].mean() * 100  # In percentage
+                margin = level_df[f'{strategy}Plan_margins'].mean()
+                results[pert_col][level][strategy] = (success_rate, margin)
+
+                print(f"    {strategy}: Success = {success_rate:.2f}%, Margin = {margin:.4f}")
+
+            # Calculate success rates for Score strategy with different alpha values
+            print("    Score strategy by alpha:")
+            for alpha in alpha_values:
+                alpha_level_df = level_df[level_df['alpha'] == alpha]
+
+                if len(alpha_level_df) == 0:
+                    continue
+
+                success_rate = alpha_level_df['ScorePlan_success'].mean() * 100
+                margin = alpha_level_df['ScorePlan_margins'].mean()
+                results[pert_col][level][f'Score (α={alpha})'] = (success_rate, margin)
+
+                print(f"      α={alpha}: Success = {success_rate:.2f}%, Margin = {margin:.4f}")
+
+    return results
+
+def create_perturbation_alpha_charts(df, output_dir, config):
+    """
+    Create charts showing Score strategy performance by alpha for each perturbation level.
+
+    Args:
+        df (DataFrame): Pandas DataFrame with experiment results
+        output_dir (str): Directory where to save visualizations
+    """
+    # Filter scenarios with at least one valid plan
+    valid_df = df[df['num_valid_plans'] > 0].copy()
+
+    # Get alpha values
+    alpha_values = sorted(valid_df['alpha'].unique())
+
+    # Get perturbation columns
+    perturbation_cols = [col for col in df.columns if col.endswith("_perturbation")]
+
+    # Create a domain variable to display name mapping
+    domain_var_display_names = {}
+    for qg in config["quality_goals"]:
+        domain_var = qg["domain_variable"]
+        # Extract a nice display name (remove _constraint suffix and capitalize)
+        display_name = domain_var.replace("_constraint", "").capitalize()
+        domain_var_display_names[domain_var] = display_name
+
+
+    # For each perturbation type
+    for pert_col in perturbation_cols:
+        domain_var = pert_col.replace("_perturbation", "")
+        display_name = domain_var_display_names.get(domain_var, domain_var)
+
+        # Get unique perturbation levels for this type
+        pert_levels = sorted(valid_df[pert_col].unique())
+
+        # Create a figure with a grid of charts, one for each alpha value
+        plt.figure(figsize=(max(len(alpha_values) * 5, 10), 8))
+
+        # Define colors for different strategies
+        colors = {
+            'Score': '#3498db',
+            'Avg': '#2ecc71',
+            'Min': '#e74c3c',
+            'Rnd': '#f39c12'
+        }
+
+        # Initialize data structures for the chart
+        data_by_alpha = {}
+        for alpha in alpha_values:
+            data_by_alpha[alpha] = {
+                'levels': [],
+                'score_success': [],
+                'avg_success': [],
+                'min_success': [],
+                'rnd_success': []
+            }
+
+        # Collect data for each perturbation level
+        for level in pert_levels:
+            level_df = valid_df[valid_df[pert_col] == level]
+            if len(level_df) == 0:
+                continue
+
+            # Calculate success rates for each alpha value
+            for alpha in alpha_values:
+                alpha_level_df = level_df[level_df['alpha'] == alpha]
+                if len(alpha_level_df) == 0:
+                    continue
+
+                data_by_alpha[alpha]['levels'].append(level)
+                data_by_alpha[alpha]['score_success'].append(alpha_level_df['ScorePlan_success'].mean() * 100)
+                data_by_alpha[alpha]['avg_success'].append(alpha_level_df['AvgPlan_success'].mean() * 100)
+                data_by_alpha[alpha]['min_success'].append(alpha_level_df['MinPlan_success'].mean() * 100)
+                data_by_alpha[alpha]['rnd_success'].append(alpha_level_df['RndPlan_success'].mean() * 100)
+
+        # Create subplots for each alpha
+        num_alphas = len(alpha_values)
+        fig, axes = plt.subplots(1, num_alphas, figsize=(num_alphas * 6, 6), sharey=True)
+        if num_alphas == 1:
+            axes = [axes]  # Ensure axes is a list even with one subplot
+
+        # Plot data for each alpha
+        for i, alpha in enumerate(alpha_values):
+            ax = axes[i]
+            data = data_by_alpha[alpha]
+
+            # Skip if no data for this alpha
+            if not data['levels']:
+                continue
+
+            # Set up bar positions
+            x = np.arange(len(data['levels']))
+            width = 0.2
+
+            # Plot bars for each strategy
+            ax.bar(x - width*1.5, data['score_success'], width, label='Score', color=colors['Score'])
+            ax.bar(x - width/2, data['avg_success'], width, label='Avg', color=colors['Avg'])
+            ax.bar(x + width/2, data['min_success'], width, label='Min', color=colors['Min'])
+            ax.bar(x + width*1.5, data['rnd_success'], width, label='Rnd', color=colors['Rnd'])
+
+            # Set labels and title
+            ax.set_xlabel('Perturbation Level')
+            if i == 0:
+                ax.set_ylabel('Success Rate (%)')
+            ax.set_title(f'α = {alpha}')
+            ax.set_xticks(x)
+            ax.set_xticklabels(data['levels'], rotation=45 if len(data['levels']) > 3 else 0)
+            ax.set_ylim(0, 100)
+            ax.grid(axis='y', linestyle='--', alpha=0.7)
+
+            # Add legend only for the first subplot
+            if i == 0:
+                ax.legend()
+
+        fig.suptitle(f'Success Rate by {display_name} Perturbation Level and Alpha', fontsize=16)
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, f'success_by_{domain_var}_perturbation_alpha.png'), dpi=300)
+        plt.close()
+        print(f"Saved success_by_{domain_var}_perturbation_alpha.png")
+
+def analyze_score_by_alpha_vs_others(df):
+    """
+    Analyze how the Score strategy with different alpha values compares to other strategies.
+
+    Args:
+        df (DataFrame): Pandas DataFrame with experiment results
+    """
+    print("\n===== ANALYSIS OF SCORE STRATEGY BY ALPHA VS OTHER STRATEGIES =====")
+
+    # Filter scenarios with at least one valid plan
+    valid_df = df[df['num_valid_plans'] > 0].copy()
+
+    # Get all alpha values
+    alpha_values = sorted(valid_df['alpha'].unique())
+
+    # Create a comparison table
+    print("\nSuccess rates by alpha value vs other strategies:")
+    print(f"{'Alpha':<10} | {'Score':<10} | {'Avg':<10} | {'Min':<10} | {'Rnd':<10}")
+    print("-" * 60)
+
+    # Store data for visualization
+    alpha_labels = []
+    score_success_by_alpha = []
+    avg_success = []
+    min_success = []
+    rnd_success = []
+
+    # Calculate success rates for each alpha
+    for alpha in alpha_values:
+        alpha_df = valid_df[valid_df['alpha'] == alpha]
+
+        if len(alpha_df) == 0:
+            continue
+
+        alpha_labels.append(f"Score (α={alpha})")
+
+        # Calculate success rates
+        score_success = alpha_df['ScorePlan_success'].mean() * 100
+        avg_success_rate = alpha_df['AvgPlan_success'].mean() * 100
+        min_success_rate = alpha_df['MinPlan_success'].mean() * 100
+        rnd_success_rate = alpha_df['RndPlan_success'].mean() * 100
+
+        # Store for visualization
+        score_success_by_alpha.append(score_success)
+        avg_success.append(avg_success_rate)
+        min_success.append(min_success_rate)
+        rnd_success.append(rnd_success_rate)
+
+        # Print comparison table
+        print(f"{alpha:<10.1f} | {score_success:<10.2f}% | {avg_success_rate:<10.2f}% | {min_success_rate:<10.2f}% | {rnd_success_rate:<10.2f}%")
+
+    return {
+        'alpha_labels': alpha_labels,
+        'score_success_by_alpha': score_success_by_alpha,
+        'avg_success': avg_success,
+        'min_success': min_success,
+        'rnd_success': rnd_success
+    }
+
+def create_score_alpha_comparison_chart(data, output_dir):
+    """
+    Create a chart comparing Score strategy with different alpha values to other strategies.
+
+    Args:
+        data (dict): Data returned by analyze_score_by_alpha_vs_others
+        output_dir (str): Directory where to save the visualization
+    """
+    plt.figure(figsize=(12, 7))
+
+    # Collect all data
+    labels = data['alpha_labels'] + ['Avg', 'Min', 'Random']
+
+    # Use the average of each strategy across all alpha scenarios
+    avg_of_avg = sum(data['avg_success']) / len(data['avg_success'])
+    avg_of_min = sum(data['min_success']) / len(data['min_success'])
+    avg_of_rnd = sum(data['rnd_success']) / len(data['rnd_success'])
+
+    success_rates = data['score_success_by_alpha'] + [avg_of_avg, avg_of_min, avg_of_rnd]
+
+    # Define colors: blues for Score with different alphas, then other colors
+    alpha_colors = ['#1f77b4', '#4292c6', '#6baed6', '#9ecae1'][:len(data['alpha_labels'])]
+    other_colors = ['#2ecc71', '#e74c3c', '#f39c12']
+    colors = alpha_colors + other_colors
+
+    # Create the bar chart
+    bars = plt.bar(labels, success_rates, color=colors)
+
+    # Add labels to bars
+    for bar in bars:
+        height = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2., height + 1,
+                 f'{height:.1f}%', ha='center', va='bottom')
+
+    plt.title('Success Rate: Score Strategy by Alpha vs Other Strategies')
+    plt.ylabel('Success Rate (%)')
+    plt.ylim(0, max(success_rates) * 1.15)  # Add some space for labels
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, 'score_alpha_vs_others.png'), dpi=300)
+    print("Saved score_alpha_vs_others.png")
+
+def create_perturbation_alpha_allin_charts(df, output_dir):
+    """
+    Create charts showing Score strategy with all alpha values and other strategies
+    for each perturbation level, all in the same chart.
+
+    Args:
+        df (DataFrame): Pandas DataFrame with experiment results
+        output_dir (str): Directory where to save visualizations
+    """
+    # Filter scenarios with at least one valid plan
+    valid_df = df[df['num_valid_plans'] > 0].copy()
+
+    # Get alpha values
+    alpha_values = sorted(valid_df['alpha'].unique())
+
+    # Get perturbation columns
+    perturbation_cols = [col for col in df.columns if col.endswith("_perturbation")]
+
+    # For each perturbation type
+    for pert_col in perturbation_cols:
+        domain_var = pert_col.replace("_perturbation", "")
+
+        # Get unique perturbation levels for this type
+        pert_levels = sorted(valid_df[pert_col].unique())
+
+        # Define colors for different strategies
+        colors = {
+            'Score_0.3': '#1f77b4',  # Dark blue
+            'Score_0.5': '#6baed6',  # Medium blue
+            'Score_0.7': '#c6dbef',  # Light blue
+            'Avg': '#2ecc71',        # Green
+            'Min': '#e74c3c',        # Red
+            'Rnd': '#f39c12'         # Orange
+        }
+
+        # Data structure to hold the results
+        results = {}
+        max_success_rate = 0  # Track maximum success rate for y-axis scaling
+
+        # For each perturbation level
+        for level in pert_levels:
+            level_df = valid_df[valid_df[pert_col] == level]
+            if len(level_df) == 0:
+                continue
+
+            results[level] = {
+                'Score_0.3': 0,
+                'Score_0.5': 0,
+                'Score_0.7': 0,
+                'Avg': level_df['AvgPlan_success'].mean() * 100,
+                'Min': level_df['MinPlan_success'].mean() * 100,
+                'Rnd': level_df['RndPlan_success'].mean() * 100
+            }
+
+            # Update max success rate
+            max_success_rate = max(max_success_rate,
+                                  results[level]['Avg'],
+                                  results[level]['Min'],
+                                  results[level]['Rnd'])
+
+            # Get Score success rates for each alpha
+            for alpha in alpha_values:
+                alpha_level_df = level_df[level_df['alpha'] == alpha]
+                if len(alpha_level_df) > 0:
+                    score_success = alpha_level_df['ScorePlan_success'].mean() * 100
+                    results[level][f'Score_{alpha}'] = score_success
+                    # Update max success rate
+                    max_success_rate = max(max_success_rate, score_success)
+
+        # Calculate appropriate y-axis maximum (round up to the next multiple of 10)
+        y_max = math.ceil(max_success_rate / 10) * 10
+
+        # Create the bar chart with proper spacing
+        fig, ax = plt.subplots(figsize=(max(len(pert_levels) * 3, 12), 8))
+
+        # Increase spacing between groups
+        x = np.arange(len(pert_levels)) * 1.5  # the label locations with more space
+        width = 0.2  # width of the bars - wider bars
+
+        # Define offsets for each strategy
+        offsets = [-2.5*width, -1.5*width, -0.5*width, 0.5*width, 1.5*width, 2.5*width]
+
+        # Plot bars for each strategy
+        bars = []
+        labels = []
+
+        # Strategy categories to plot
+        strategies_to_plot = [f'Score_{alpha}' for alpha in alpha_values] + ['Avg', 'Min', 'Rnd']
+
+        # Plot all strategies
+        for i, strategy in enumerate(strategies_to_plot):
+            strategy_values = [results[level][strategy] if level in results else 0 for level in pert_levels]
+
+            # Get proper label
+            if strategy.startswith('Score_'):
+                alpha = strategy.split('_')[1]
+                label = f'Score (α={alpha})'
+            else:
+                label = strategy
+
+            # Create bar
+            bar = ax.bar(x + offsets[i], strategy_values, width, color=colors[strategy])
+            bars.append(bar)
+            labels.append(label)
+
+        # Set labels, title and legend
+        ax.set_xlabel('Perturbation Level', fontsize=12)
+        ax.set_ylabel('Success Rate (%)', fontsize=12)
+        ax.set_title(f'Success Rate by {domain_var} Perturbation Level', fontsize=14)
+        ax.set_xticks(x)
+        ax.set_xticklabels(pert_levels, fontsize=11)
+
+        # Set y-axis to dynamically calculated maximum
+        ax.set_ylim(0, y_max)
+
+        ax.legend(labels=labels, loc='upper right', fontsize=11)
+        ax.grid(axis='y', linestyle='--', alpha=0.7)
+
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, f'success_by_{domain_var}_perturbation_all_alphas.png'), dpi=300)
+        plt.close()
+        print(f"Saved success_by_{domain_var}_perturbation_all_alphas.png")
 
 def analyze_by_alpha(df):
     """
@@ -377,8 +806,22 @@ def generate_summary_report(df, output_file):
 
     # Calculate essential statistics
     strategies = ['Score', 'Avg', 'Min', 'Rnd']
-    success_rates = {s: valid_df[f'{s}Plan_success'].mean() * 100 for s in strategies}
-    margins = {s: valid_df[f'{s}Plan_margins'].mean() for s in strategies}
+    success_rates = {}
+    margins = {}
+    margin_variances = {}
+
+    for strategy in strategies:
+        # Success rates
+        success_rates[strategy] = valid_df[f'{strategy}Plan_success'].mean() * 100
+
+        # Calculate margins and variance only for successful plans
+        successful_margins = valid_df.loc[valid_df[f'{strategy}Plan_success'] == 1, f'{strategy}Plan_margins']
+        if len(successful_margins) > 0:
+            margins[strategy] = successful_margins.mean()
+            margin_variances[strategy] = successful_margins.var()
+        else:
+            margins[strategy] = 0
+            margin_variances[strategy] = 0
 
     # Sort strategies from best to worst
     sorted_by_success = sorted(success_rates.items(), key=lambda x: x[1], reverse=True)
@@ -407,17 +850,19 @@ Generated on: {timestamp}
 
     report += f"""
 ### Average Margins (distance from constraints after perturbation)
-| Strategy | Average Margin |
-|----------|---------------|
+| Strategy | Average Margin | Margin Variance |
+|----------|---------------|-----------------|
 """
 
     for strategy, margin in sorted(margins.items(), key=lambda x: x[1], reverse=True):
-        report += f"| {strategy} | {margin:.4f} |\n"
+        variance = margin_variances[strategy]
+        report += f"| {strategy} | {margin:.4f} | {variance:.6f} |\n"
 
     report += f"""
 ## Key Findings
 - The best performing strategy is **{best_strategy}** with a success rate of {sorted_by_success[0][1]:.2f}%
 - Compared to Random strategy baseline, {best_strategy} performs {success_rates[best_strategy] - success_rates['Rnd']:.2f}% better
+- {best_strategy} has a margin variance of {margin_variances[best_strategy]:.6f}, which indicates {'low' if margin_variances[best_strategy] < 0.001 else 'moderate' if margin_variances[best_strategy] < 0.01 else 'high'} variability in constraint satisfaction
 """
 
     # Add analysis by alpha if Score is the best
@@ -427,18 +872,22 @@ Generated on: {timestamp}
         best_alpha_success = 0
 
         report += "\n### Performance of Score Strategy by Alpha Value\n"
-        report += "| Alpha | Success Rate (%) | Margin |\n"
-        report += "|-------|-----------------|--------|\n"
+        report += "| Alpha | Success Rate (%) | Margin | Margin Variance |\n"
+        report += "|-------|-----------------|--------|----------------|\n"
 
         for alpha, group in alpha_groups:
             score_success = group['ScorePlan_success'].mean() * 100
-            score_margin = group['ScorePlan_margins'].mean()
+
+            # Calculate margin and variance for successful plans only
+            successful_margins = group.loc[group['ScorePlan_success'] == 1, 'ScorePlan_margins']
+            score_margin = successful_margins.mean() if len(successful_margins) > 0 else 0
+            score_variance = successful_margins.var() if len(successful_margins) > 0 else 0
 
             if score_success > best_alpha_success:
                 best_alpha = alpha
                 best_alpha_success = score_success
 
-            report += f"| {alpha} | {score_success:.2f}% | {score_margin:.4f} |\n"
+            report += f"| {alpha} | {score_success:.2f}% | {score_margin:.4f} | {score_variance:.6f} |\n"
 
         report += f"\nThe optimal alpha value appears to be **{best_alpha}** with a success rate of {best_alpha_success:.2f}%\n"
 
@@ -466,13 +915,18 @@ Generated on: {timestamp}
 
             if len(neg_df) > 0:
                 report += f"\n### {domain_var} Negative Perturbations\n"
-                report += "| Strategy | Success Rate (%) | Margin |\n"
-                report += "|----------|-----------------|--------|\n"
+                report += "| Strategy | Success Rate (%) | Margin | Margin Variance |\n"
+                report += "|----------|-----------------|--------|----------------|\n"
 
                 for strategy in strategies:
                     success_rate = neg_df[f'{strategy}Plan_success'].mean() * 100
-                    margin = neg_df[f'{strategy}Plan_margins'].mean()
-                    report += f"| {strategy} | {success_rate:.2f}% | {margin:.4f} |\n"
+
+                    # Calculate margin and variance for successful plans only
+                    successful_margins = neg_df.loc[neg_df[f'{strategy}Plan_success'] == 1, f'{strategy}Plan_margins']
+                    margin = successful_margins.mean() if len(successful_margins) > 0 else 0
+                    variance = successful_margins.var() if len(successful_margins) > 0 else 0
+
+                    report += f"| {strategy} | {success_rate:.2f}% | {margin:.4f} | {variance:.6f} |\n"
 
     # Conclusions
     report += f"""
@@ -480,6 +934,8 @@ Generated on: {timestamp}
 Based on the experiment results, the {best_strategy} strategy demonstrates the highest resilience to perturbations,
 with a success rate of {sorted_by_success[0][1]:.2f}%. This indicates that {best_strategy}'s approach to plan selection
 provides better robustness against uncertainties in the execution environment.
+
+The margin variance analysis shows that {'the most consistent' if best_strategy == sorted(margin_variances.items(), key=lambda x: x[1])[0][0] else 'a relatively consistent'} performance across different scenarios, which is valuable for predictable system behavior.
 """
 
     # Write report to file
@@ -494,7 +950,8 @@ provides better robustness against uncertainties in the execution environment.
     result_df = pd.DataFrame({
         'Strategy': strategies,
         'Success Rate (%)': [success_rates[s] for s in strategies],
-        'Average Margin': [margins[s] for s in strategies]
+        'Average Margin': [margins[s] for s in strategies],
+        'Margin Variance': [margin_variances[s] for s in strategies]
     })
 
     result_df.to_csv(csv_file, index=False)
@@ -544,11 +1001,18 @@ def analyze_results(config_file):
 
     # More detailed analyses
     analyze_by_perturbation_level(df)
+    alpha_pert_results = analyze_by_perturbation_level_with_alfas(df)
     analyze_by_alpha(df)
 
-    # Create visualizations
+    # Analysis of Score strategy by alpha vs other strategies
+    alpha_comparison_data = analyze_score_by_alpha_vs_others(df)
+
+   # Create visualizations
     viz_dir = os.path.join(output_dir, "visualizations")
     create_visualizations(df, viz_dir)
+    create_perturbation_alpha_charts(df, viz_dir,config)
+    create_score_alpha_comparison_chart(alpha_comparison_data, viz_dir)
+    create_perturbation_alpha_allin_charts(df, viz_dir)
 
     # Generate summary report
     generate_summary_report(df, results_file)
