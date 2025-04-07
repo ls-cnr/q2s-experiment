@@ -468,7 +468,7 @@ def create_score_alpha_comparison_chart(data, output_dir):
     plt.savefig(os.path.join(output_dir, 'score_alpha_vs_others.png'), dpi=300)
     print("Saved score_alpha_vs_others.png")
 
-def create_perturbation_alpha_allin_charts(df, output_dir):
+def create_perturbation_alpha_allin_charts(df, output_dir, config):
     """
     Create charts showing Score strategy with all alpha values and other strategies
     for each perturbation level, all in the same chart.
@@ -486,9 +486,19 @@ def create_perturbation_alpha_allin_charts(df, output_dir):
     # Get perturbation columns
     perturbation_cols = [col for col in df.columns if col.endswith("_perturbation")]
 
+    # Create a domain variable to display name mapping
+    domain_var_display_names = {}
+    for qg in config["quality_goals"]:
+        domain_var = qg["domain_variable"]
+        # Extract a nice display name (remove _constraint suffix and capitalize)
+        display_name = domain_var.replace("_constraint", "").capitalize()
+        domain_var_display_names[domain_var] = display_name
+
+
     # For each perturbation type
     for pert_col in perturbation_cols:
         domain_var = pert_col.replace("_perturbation", "")
+        display_name = domain_var_display_names.get(domain_var, domain_var)
 
         # Get unique perturbation levels for this type
         pert_levels = sorted(valid_df[pert_col].unique())
@@ -576,7 +586,7 @@ def create_perturbation_alpha_allin_charts(df, output_dir):
         # Set labels, title and legend
         ax.set_xlabel('Perturbation Level', fontsize=12)
         ax.set_ylabel('Success Rate (%)', fontsize=12)
-        ax.set_title(f'Success Rate by {domain_var} Perturbation Level', fontsize=14)
+        ax.set_title(f'Success Rate by {display_name} Perturbation Level', fontsize=14)
         ax.set_xticks(x)
         ax.set_xticklabels(pert_levels, fontsize=11)
 
@@ -625,7 +635,7 @@ def analyze_by_alpha(df):
         print(f"    Score vs Min: {score_success - min_success:+.2f}%")
         print(f"    Score vs Rnd: {score_success - rnd_success:+.2f}%")
 
-def create_visualizations(df, output_dir):
+def create_visualizations(df, output_dir,config):
     """
     Create visualizations to analyze the data.
 
@@ -634,6 +644,14 @@ def create_visualizations(df, output_dir):
         output_dir (str): Directory where to save the visualizations
     """
     print("\n===== CREATING VISUALIZATIONS =====")
+
+    # Create a domain variable to display name mapping
+    domain_var_display_names = {}
+    for qg in config["quality_goals"]:
+        domain_var = qg["domain_variable"]
+        # Extract a nice display name (remove _constraint suffix and capitalize)
+        display_name = domain_var.replace("_constraint", "").capitalize()
+        domain_var_display_names[domain_var] = display_name
 
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
@@ -684,6 +702,8 @@ def create_visualizations(df, output_dir):
 
     for pert_col in perturbation_cols:
         domain_var = pert_col.replace("_perturbation", "")
+        display_name = domain_var_display_names.get(domain_var, domain_var)
+
         plt.figure(figsize=(12, 6))
 
         # Get all unique perturbation levels
@@ -720,7 +740,7 @@ def create_visualizations(df, output_dir):
 
         plt.xlabel('Perturbation Level')
         plt.ylabel('Success Rate (%)')
-        plt.title(f'Success Rate by {domain_var} Perturbation Level')
+        plt.title(f'Success Rate by {display_name} Perturbation Level')
         plt.xticks(index + bar_width * 1.5, pert_levels)
         plt.legend()
         plt.ylim(0, 105)  # Extra space for labels
@@ -1009,10 +1029,10 @@ def analyze_results(config_file):
 
    # Create visualizations
     viz_dir = os.path.join(output_dir, "visualizations")
-    create_visualizations(df, viz_dir)
+    create_visualizations(df, viz_dir,config)
     create_perturbation_alpha_charts(df, viz_dir,config)
     create_score_alpha_comparison_chart(alpha_comparison_data, viz_dir)
-    create_perturbation_alpha_allin_charts(df, viz_dir)
+    create_perturbation_alpha_allin_charts(df, viz_dir,config)
 
     # Generate summary report
     generate_summary_report(df, results_file)
