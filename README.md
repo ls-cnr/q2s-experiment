@@ -158,7 +158,7 @@ The experimental results from 45,000 scenarios with the Cleaner Robot showed:
 ![Score Alpha vs Others](cleaner_robot_results/visualizations/score_alpha_vs_others.png)
 *Success rates for the Score strategy with different alpha values compared to other strategies*
 
-![Success by Cost Constraint Perturbation](cleaner_robot_results/visualizations/success_by_cost_constraint_perturbation_all_alphas.png)
+![Success by Cost Constraint Perturbation](cleaner_robot_results/visualizations/success_by_consume_constraint_perturbation_all_alphas.png)
 *Success rates for different strategies under various cost constraint perturbation levels*
 
 ![Success vs Valid Plans](cleaner_robot_results/visualizations/success_vs_valid_plans.png)
