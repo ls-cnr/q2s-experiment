@@ -1,1 +1,0 @@
-id,event_size,cost_constraint,effort_constraint,time_constraint,perturbation_level_cost,perturbation_level_effort,perturbation_level_time,alpha,Q2S_success,Q2S_margins,Avg_success,Avg_margins,Min_success,Min_margins,Random_success,Random_margins,num_valid_plans
