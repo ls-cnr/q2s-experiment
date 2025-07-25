@@ -124,6 +124,7 @@ def create_perturbation_score_mapping(config):
                         constraint_mapping[pert["value"]] = pert["score"]
 
                 domain_var = constraint_option["domain_variable"]
+                # Use the same logic as identify_constraints_from_config
                 constraint_base = domain_var.replace("_constraint", "")
                 perturbation_mapping[constraint_base] = constraint_mapping
 
@@ -173,15 +174,29 @@ def generate_multiple_perturbation_scenarios(df, config, constraints_map, output
         total_score = 0
 
         for constraint_name, perturbation_col in constraints_map.items():
-            if constraint_name in perturbation_mapping and perturbation_col in valid_df.columns:
+            if perturbation_col in valid_df.columns:
                 perturbation_value = row[perturbation_col]
-                constraint_mapping = perturbation_mapping[constraint_name]
 
-                if perturbation_value in constraint_mapping:
+                # constraint_name might be 'cost_constraint', but mapping uses 'cost'
+                # Try both the full name and the base name
+                constraint_mapping = None
+
+                if constraint_name in perturbation_mapping:
+                    constraint_mapping = perturbation_mapping[constraint_name]
+                else:
+                    # Try removing '_constraint' suffix to match the mapping key
+                    base_name = constraint_name.replace('_constraint', '')
+                    if base_name in perturbation_mapping:
+                        constraint_mapping = perturbation_mapping[base_name]
+
+                if constraint_mapping and perturbation_value in constraint_mapping:
                     score = constraint_mapping[perturbation_value]
                     total_score += score
                 else:
-                    print(f"Warning: Perturbation value {perturbation_value} not found in mapping for {constraint_name}")
+                    if constraint_mapping is None:
+                        print(f"Warning: No mapping found for constraint {constraint_name}")
+                    else:
+                        print(f"Warning: Perturbation value {perturbation_value} not found in mapping for {constraint_name}")
 
         perturbation_scores.append(total_score)
 
