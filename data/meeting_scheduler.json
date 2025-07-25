@@ -30,40 +30,36 @@
         "domain_variable": "cost_constraint",
         "values": [270, 210, 190],
         "perturbation": [
-          { "level": "pos", "value": 20 },
-          { "level": "no", "value": 0 },
-          { "level": "low_neg", "value": -10 },
-          { "level": "high_neg", "value": -75 },
-          { "level": "catastrofic", "value": -100 }
+          { "level": "no", "value": 0, "score": 0 },
+          { "level": "low_neg", "value": -10, "score": 1 },
+          { "level": "high_neg", "value": -75, "score": 2 },
+          { "level": "catastrofic", "value": -100, "score": 3 }
         ]
       },
       {
         "domain_variable": "effort_constraint",
         "values": [6, 4],
         "perturbation": [
-          { "level": "pos", "value": 1 },
-          { "level": "no", "value": 0 },
-          { "level": "low_neg", "value": -2 },
-          { "level": "high_neg", "value": -4 },
-          { "level": "catastrofic", "value": -6 }
+          { "level": "no", "value": 0, "score": 0 },
+          { "level": "low_neg", "value": -2, "score": 1 },
+          { "level": "high_neg", "value": -4, "score": 2 },
+          { "level": "catastrofic", "value": -6, "score": 3 }
         ]
       },
       {
         "domain_variable": "time_constraint",
         "values": [9, 7],
         "perturbation": [
-          { "level": "pos", "value": 3 },
-          { "level": "no", "value": 0 },
-          { "level": "low_neg", "value": -2 },
-          { "level": "high_neg", "value": -5 },
-          { "level": "catastrofic", "value": -10 }
+          { "level": "no", "value": 0, "score": 0 },
+          { "level": "low_neg", "value": -2, "score": 1 },
+          { "level": "high_neg", "value": -5, "score": 2 },
+          { "level": "catastrofic", "value": -10, "score": 3 }
         ]
       }
     ]
   },
   "simulation_settings": {
     "output_directory": "meeting_scheduler_results",
-    "scenarios_filename": "scenarios.csv",
-    "results_filename": "exp1_results.csv"
+    "scenarios_filename": "scenarios.csv"
   }
 }
