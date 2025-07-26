@@ -60,7 +60,5 @@ build/
 .zed-meta/
 
 # Generated analysis data
-cleaner_robot_results/
+cleaning_robot_results/
 meeting_scheduler_results/
-cleaner_robot_results/**/visualizations/
-meeting_scheduler_results/**/visualizations/
