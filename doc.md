@@ -17,7 +17,6 @@ d_{i,j} = (MaxValue[j] - ActualValue[i,j]) / MaxValue[j]
 This matrix is used to:
 1. **Filter invalid plans** (those with negative values)
 2. **Rank valid plans** to select the most promising one
-3. **Guide the objective relaxation process** when no plan satisfies all constraints
 
 For plan selection, a strategy based on the Hurwicz criterion is used:
 ```
@@ -41,8 +40,6 @@ The system aims to support the following activities:
 - Notifying participants (via email or phone)
 
 Each of these activities has implications for quality aspects such as cost, time, and effort required to organize the meeting. The Q2S approach helps in selecting the best implementation plan that balances these quality objectives.
-
-
 
 ### Summary of the Case Study (Meeting Scheduler)
 
@@ -72,46 +69,129 @@ Plans are combinations of these functional objectives, and each plan has differe
 
 ## Type of Experiment
 
-The experiment evaluates the effectiveness of different plan selection strategies in the presence of perturbations. The strategies compared are:
+The experiment evaluates the effectiveness of different plan selection strategies in the presence of perturbations. The experimental procedure follows these sequential steps:
+
+1. **Scenario Definition**: Each scenario is defined by:
+   - **Alpha value (α)**: Parameter balancing optimism/pessimism (0.3, 0.5, or 0.7)
+   - **Initial constraint configuration**: Base values for all quality goal constraints
+   - **Perturbation values**: Specific changes to be applied to each constraint
+
+2. **Plan Selection**: For each scenario, all strategies select their preferred plan:
+   - Q2S strategy (with the scenario's α value)
+   - AvgSat strategy
+   - MinSat strategy
+   - Random strategy
+
+3. **Perturbation Application**: The predefined perturbations are applied to the selected plans, potentially making previously valid plans invalid
+
+4. **Performance Evaluation**: For each strategy, the system measures:
+   - **Success**: Whether the selected plan remains valid after perturbation
+   - **Margin**: The distance from constraint boundaries after perturbation
+
+The strategies compared are:
 
 1. **Q2S**: Combines AvgSat and MinSat according to the α parameter
 2. **AvgSat**: Selects the plan with the best average distance
 3. **MinSat**: Selects the plan with the best minimum distance
 4. **Random**: Randomly selects a valid plan (baseline)
 
-The experiment consists of generating scenarios with different parameter combinations, selecting plans with different strategies, applying perturbations, and measuring:
+The experiment measures:
 - **Success rate**: percentage of plans that remain valid after perturbation
 - **Average margins**: average distance from constraints after perturbation
 
-## Function of the 3 Scripts
+## Pipeline Architecture
 
-1. **Scenario Generator** (`scenario_generator.py`):
-   - Generates all possible combinations of scenario parameters
-   - Saves these combinations to a CSV file (`all_scenarios.csv`)
+The experimental framework consists of 6 main components:
 
-2. **Scenario Processor** (`scenario_processor.py`):
-   - Loads plans, contributions, and quality objectives from CSV files
-   - For each scenario in the file:
-     - Calculates the impacts of each plan
-     - Filters valid plans
-     - Calculates the Q2S matrix
-     - Applies different selection strategies
-     - Applies perturbations to selected plans
-     - Checks if they remain valid
-     - Records the results
-   - Saves all results to a CSV file (`all_scenarios_results.csv`)
+### 1. Main Pipeline Orchestrator (`pipeline.py`)
+- **Purpose**: Coordinates the execution of all pipeline steps
+- **Input**: Configuration JSON file
+- **Function**:
+  - Validates configuration file
+  - Executes each pipeline step in sequence
+  - Handles errors and provides progress tracking
+  - Supports selective step execution with `--skip-step` option
+- **Usage**: `python pipeline.py <config_file>`
 
-3. **Results Analyzer** (`results_analyzer.py`):
-   - Loads results from the CSV file
-   - Calculates summary statistics
-   - Generates visualizations
-   - Produces a synthetic report (`experiment_summary.csv`)
+### 2. Scenario Generator (`pipeline1_scenario_generator.py`)
+- **Purpose**: Generates all possible combinations of scenario parameters
+- **Input**: Configuration file specifying alpha options, constraint values, and perturbation levels
+- **Process**:
+  - Creates all combinations of alpha values, constraint configurations, and perturbation levels
+  - For each combination, generates a unique scenario with ID
+  - Calculates Q2S matrix for each scenario
+  - Applies different selection strategies
+  - Records plan selection results
+- **Output**: `scenarios.csv` containing all generated scenarios with strategy results
+
+### 3. Data Pre-processor (`pipeline2-1_data_analysis_pre_process.py`)
+- **Purpose**: Groups scenarios that differ only by alpha value
+- **Input**: `scenarios.csv`
+- **Process**:
+  - Groups rows with identical constraints and perturbations but different alpha values
+  - Creates separate columns for ScorePlan results for each alpha (Score0_3Plan, Score0_5Plan, Score0_7Plan)
+  - Consolidates AvgPlan, MinPlan, and RndPlan results (identical across alphas)
+- **Output**: `pre_processed_scenarios.csv`
+
+### 4. Single Perturbation Analyzer (`pipeline2-2_data_analysis_single_perturbation.py`)
+- **Purpose**: Analyzes scenarios where only one quality goal is perturbed
+- **Input**: `pre_processed_scenarios.csv`
+- **Process**:
+  - For each quality goal, filters scenarios where only that goal has perturbations
+  - Includes baseline cases (perturbation = 0) for comparison
+  - Creates summary statistics for each perturbation level
+  - Calculates success rates, average margins, and variance margins for all strategies
+- **Output**:
+  - `tables/scenarios_{quality_goal}_single_perturbation.csv` (filtered data)
+  - `tables/summary_{quality_goal}_single_perturbation.csv` (statistical summaries)
+
+### 5. Multiple Perturbation Analyzer (`pipeline2-3_data_analysis_multiple_perturbation.py`)
+- **Purpose**: Analyzes scenarios with combined perturbations across multiple quality goals
+- **Input**: `pre_processed_scenarios.csv`
+- **Process**:
+  - Calculates perturbation severity scores by summing individual perturbation scores
+  - Groups scenarios by total perturbation severity
+  - Creates summary statistics for each severity level
+  - Analyzes strategy performance under different levels of combined stress
+- **Output**:
+  - `tables/scenarios_perturbation_severity.csv` (data with severity scores)
+  - `tables/summary_multiple_perturbation.csv` (statistical summary)
+
+### 6. Visualization Generator (`pipeline3_data_visualization.py`)
+- **Purpose**: Creates histogram plots comparing strategy performance
+- **Input**: All summary CSV files from previous steps
+- **Process**:
+  - For each quality goal: creates success rate and margin comparison plots for single perturbations
+  - For multiple perturbations: creates global severity comparison plots
+  - Uses consistent pastel color palette across all visualizations
+  - Generates publication-ready plots with proper legends and labels
+- **Output**:
+  - `plots/histo_single_{quality_goal}_perturbation_success.png`
+  - `plots/histo_single_{quality_goal}_perturbation_margin.png`
+  - `plots/histo_multi_perturbation_success.png`
+  - `plots/histo_multi_perturbation_margin.png`
 
 ## Input and Output Data Formats
 
 ### Input:
 
-1. **exp1_plans.csv**:
+1. **Configuration File** (JSON):
+   - Defines file paths, quality goals, scenario parameters, and output settings
+   - See CONFIGURATION.md for detailed format specification
+
+   ```json
+   {
+     "file_paths": {
+       "plans": "data/exp1_ms_plans.csv",
+       "contributions": "data/exp1_ms_contributions.csv"
+     },
+     "quality_goals": [...],
+     "scenario_generator": {...},
+     "simulation_settings": {...}
+   }
+   ```
+
+2. **Plans File** (`*_plans.csv`):
    - Defines the composition of plans in terms of functional goals
    - Format: 0/1 matrix where rows are plans and columns are goals
 
@@ -122,7 +202,7 @@ The experiment consists of generating scenarios with different parameter combina
    ...
    ```
 
-2. **exp1_contributions.csv**:
+3. **Contributions File** (`*_contributions.csv`):
    - Defines how each goal contributes to domain variables
    - Format: rows = domain variables, columns = goals
 
@@ -133,40 +213,46 @@ The experiment consists of generating scenarios with different parameter combina
    TimeSpent,1,1,1,1,1,,2,1,2,4
    ```
 
-3. **exp1_quality_goals.csv**:
-   - Defines quality goals and their constraints
-   - Format: list of goals with associated domain variable and constraint
+### Output:
+
+The pipeline generates a structured output directory with the following organization:
+
+```
+{output_directory}/
+├── scenarios.csv                              # Raw generated scenarios
+├── pre_processed_scenarios.csv               # Alpha-grouped scenarios
+├── tables/                                    # Analysis tables
+│   ├── scenarios_{quality_goal}_single_perturbation.csv
+│   ├── summary_{quality_goal}_single_perturbation.csv
+│   ├── scenarios_perturbation_severity.csv
+│   └── summary_multiple_perturbation.csv
+└── plots/                                     # Visualizations
+    ├── histo_single_{quality_goal}_perturbation_success.png
+    ├── histo_single_{quality_goal}_perturbation_margin.png
+    ├── histo_multi_perturbation_success.png
+    └── histo_multi_perturbation_margin.png
+```
+
+#### Main Data Files:
+
+1. **scenarios.csv**:
+   - Generated by pipeline step 1
+   - Contains all scenario combinations with strategy selection results
 
    ```
-   Quality Goals,Domain Variable,QG constraints
-   QG0,TotalCost,200
-   QG1,TotalEffort,3
-   QG2,TimeSpent,6
-   ```
-
-4. **all_scenarios.csv**:
-   - Generated by the first script
-   - Contains all scenarios to be processed
-
-   ```
-   id,event_size,organizers,time,budget,alpha,perturbation_level_org,perturbation_level_time,perturbation_level_cost
-   1,small,1,2,100,0.3,pos,no,low_neg
+   ID,alpha,cost_constraint,effort_constraint,time_constraint,cost_constraint_perturbation,effort_constraint_perturbation,time_constraint_perturbation,num_valid_plans,ScorePlan_ID,ScorePlan_success,ScorePlan_margins,AvgPlan_ID,AvgPlan_success,AvgPlan_margins,MinPlan_ID,MinPlan_success,MinPlan_margins,RndPlan_ID,RndPlan_success,RndPlan_margins
+   1,0.3,270,6,9,0,0,0,18,Plan8,1,0.4259,Plan17,1,0.4815,Plan6,1,0.358,Plan12,1,0.3025
    ...
    ```
 
-### Output:
+2. **pre_processed_scenarios.csv**:
+   - Generated by pipeline step 2.1
+   - Alpha-grouped scenarios with separate columns for each alpha's ScorePlan results
 
-1. **all_scenarios_results.csv**:
-   - Generated by the second script
-   - Contains results for each scenario
-
-   ```
-   id,event_size,organizers,time,budget,perturbation_level_org,perturbation_level_time,perturbation_level_cost,alpha,Q2S_success,Q2S_margins,Avg_success,Avg_margins,Min_success,Min_margins,Random_success,Random_margins,num_valid_plans
-   ```
-
-2. **experiment_summary.csv**:
-   - Generated by the third script
-   - Contains summary statistics of the experiment
+3. **Summary Tables** (`tables/summary_*.csv`):
+   - Generated by pipeline steps 2.2 and 2.3
+   - Statistical summaries with success rates, average margins, and variance margins
+   - Used for generating visualizations
 
 ## Scenario Parameters
 
@@ -191,34 +277,12 @@ The experiment consists of generating scenarios with different parameter combina
 
 ### Perturbations:
 For each dimension (organizers, time, cost), perturbation levels are:
-- "pos": Improvement (compared to planned values)
-- "no": No change
-- "low_neg": Slight deterioration
-- "high_neg": Significant deterioration
+- "no": No change (score: 0)
+- "low_neg": Slight deterioration (score: 1)
+- "high_neg": Significant deterioration (score: 2)
+- "catastrophic": Severe deterioration (score: 3)
 
-Specific values for perturbation:
-```python
-PERTURBATION_VALUE = {
-    "org": {
-        "pos": -1,        # 1 more organizer
-        "no": 0,          # No change
-        "low_neg": 1,     # 1 fewer organizer
-        "high_neg": 2     # 2 fewer organizers
-    },
-    "time": {
-        "pos": -24,       # 1 day less (hours)
-        "no": 0,          # No change
-        "low_neg": 24,    # 1 extra day (hours)
-        "high_neg": 48    # 2 extra days (hours)
-    },
-    "cost": {
-        "pos": -50,       # 50 euros less
-        "no": 0,          # No change
-        "low_neg": 50,    # 50 euros more
-        "high_neg": 100   # 100 euros more
-    }
-}
-```
+Specific values vary by case study and are defined in the configuration file's perturbation mappings.
 
 ## Data Loading Strategy
 
@@ -254,20 +318,17 @@ Data is loaded from external CSV files for maximum flexibility:
        return contributions
    ```
 
-3. **Loading quality goals**:
+3. **Loading quality goals from configuration**:
    ```python
-   def load_quality_goals(file_path="data/exp1_quality_goals.csv"):
+   def load_quality_goals_from_config(config):
        quality_goals = {}
-       df = pd.read_csv(file_path)
-       for _, row in df.iterrows():
-           qg_id = row['Quality Goals']
-           domain_var = row['Domain Variable']
-           constraint = float(row['QG constraints'])
+       for qg in config['quality_goals']:
+           qg_id = qg['id']
            quality_goals[qg_id] = {
                "name": qg_id,
-               "domain_variable": domain_var,
-               "max_value": constraint,
-               "type": "max"
+               "domain_variable": qg['domain_variable'],
+               "column_name": qg['column_name'],
+               "type": qg.get('relation_type', 'max')
            }
        return quality_goals
    ```
@@ -293,4 +354,24 @@ To make costs, effort, and time more realistically dependent on event size, we i
 
 This approach maintains the original data files but introduces greater variability in values, making the experiment more realistic.
 
-This document contains all the essential information to continue the project in another chat or session, preserving the decisions made and the implemented structure.
+## Running the Complete Pipeline
+
+To execute the full experimental pipeline:
+
+```bash
+# Complete pipeline execution
+python pipeline.py data/meeting_scheduler.json
+python pipeline.py data/cleaning_robot.json
+
+# Execute specific steps only
+python pipeline1_scenario_generator.py data/meeting_scheduler.json
+python pipeline2-1_data_analysis_pre_process.py data/meeting_scheduler.json
+python pipeline2-2_data_analysis_single_perturbation.py data/meeting_scheduler.json
+python pipeline2-3_data_analysis_multiple_perturbation.py data/meeting_scheduler.json
+python pipeline3_data_visualization.py data/meeting_scheduler.json
+
+# Skip certain steps
+python pipeline.py data/meeting_scheduler.json --skip-step 1 --skip-step 2
+```
+
+The pipeline automatically creates the output directory structure and processes all scenarios according to the configuration parameters.
