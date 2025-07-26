@@ -28,19 +28,45 @@ def load_config(config_file):
         return json.load(f)
 
 
+def get_domain_variables(config):
+    """Extract domain variable names from quality goals."""
+    quality_goals = config.get('quality_goals', [])
+    domain_variables = []
+
+    for qg in quality_goals:
+        domain_variable = qg.get('column_name', qg.get('domain_variable'))
+        if domain_variable:
+            domain_variables.append(domain_variable)
+
+    return domain_variables
+
+
 def preprocess_scenarios(scenarios_df, config):
     """Transform the scenarios dataframe by grouping alpha values."""
 
+    # Get domain variables dynamically from config
+    domain_variables = get_domain_variables(config)
+
+    print(f"Domain variables from config: {domain_variables}")
+
     # Group by scenario characteristics (excluding ID and alpha)
-    grouping_cols = [
-        'cost_constraint',
-        'effort_constraint',
-        'time_constraint',
-        'cost_constraint_perturbation',
-        'effort_constraint_perturbation',
-        'time_constraint_perturbation',
-        'num_valid_plans'
-    ]
+    grouping_cols = []
+
+    # Add constraint columns
+    grouping_cols.extend(domain_variables)
+
+    # Add perturbation columns
+    grouping_cols.extend([f"{var}_perturbation" for var in domain_variables])
+
+    # Add num_valid_plans
+    grouping_cols.append('num_valid_plans')
+
+    print(f"Grouping by columns: {grouping_cols}")
+
+    # Verify all columns exist in the dataframe
+    missing_cols = [col for col in grouping_cols if col not in scenarios_df.columns]
+    if missing_cols:
+        raise ValueError(f"Missing columns in scenarios data: {missing_cols}")
 
     # Initialize result dataframe
     result_rows = []
