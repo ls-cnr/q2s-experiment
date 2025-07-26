@@ -1,288 +1,296 @@
 #!/usr/bin/env python3
 """
-Q2S Data Visualization Pipeline
-This script creates histogram visualizations from Q2S single perturbation analysis tables.
+Pipeline Step 3: Data Visualization
+This script creates histogram plots comparing different strategies across perturbation levels
+using the summary tables generated in previous steps.
+
+For each quality goal, it generates:
+1. Single perturbation success rate comparison histogram
+2. Single perturbation average margin comparison histogram
+
+Additionally, it creates:
+3. Multiple perturbation success rate comparison histogram
+4. Multiple perturbation average margin comparison histogram
+
+The plots compare 6 strategies: Min (α=0), α=0.3, α=0.5, α=0.7, Avg (α=1), and Rnd
+across different perturbation levels with custom labels and pastel color palette.
 """
 
-import sys
-import os
+import argparse
+import json
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 from pathlib import Path
-from q2s_utils import load_json_config
 
-def get_strategy_colors():
-    """
-    Define color scheme for different strategies.
 
-    Returns:
-        dict: Strategy colors mapping
-    """
+def load_config(config_file):
+    """Load configuration from JSON file."""
+    with open(config_file, 'r') as f:
+        return json.load(f)
+
+
+def extract_quality_goal_name(domain_variable):
+    """Extract the quality goal name from domain variable."""
+    if domain_variable.endswith('_constraint'):
+        return domain_variable[:-11]  # Remove '_constraint'
+    return domain_variable
+
+
+def get_perturbation_label_mapping():
+    """Create mapping from perturbation values to descriptive labels."""
+    # This mapping assumes common perturbation values
+    # Can be extended or made configurable if needed
     return {
-        'Min': '#e74c3c',           # Red
-        'Score_03': '#1f77b4',      # Dark blue
-        'Score_05': '#4292c6',      # Medium blue
-        'Score_07': '#6baed6',      # Light blue
-        'Avg': '#2ecc71',           # Green
-        'Rnd': '#f39c12'            # Orange
+        -100: "catastrophic",
+        -75: "very negative",
+        -10: "negative",
+        0: "zero perturbation"
     }
 
-def create_perturbation_mapping(config):
-    """
-    Create mapping from perturbation values to descriptive labels based on configuration.
 
-    Args:
-        config (dict): Configuration dictionary
-
-    Returns:
-        dict: Dictionary mapping perturbation values to labels
-    """
-    perturbation_mapping = {}
-
-    # Try to find perturbation data in scenario_generator section
-    if "scenario_generator" in config and "constraint_options" in config["scenario_generator"]:
-        for constraint_option in config["scenario_generator"]["constraint_options"]:
-            if "perturbation" in constraint_option:
-                domain_var = constraint_option["domain_variable"]
-                constraint_base = domain_var.replace("_constraint", "")
-
-                # Create value to label mapping for this constraint
-                value_to_label = {}
-                for pert in constraint_option["perturbation"]:
-                    if "value" in pert and "level" in pert:
-                        value = pert["value"]
-                        level = pert["level"]
-
-                        # Map level names to display labels
-                        if level == "no":
-                            label = "zero"
-                        elif level == "low_neg":
-                            label = "negative"
-                        elif level == "high_neg":
-                            label = "very negative"
-                        elif level == "catastrofic":
-                            label = "catastrophic"
-                        else:
-                            label = level  # fallback to original level name
-
-                        value_to_label[value] = label
-
-                perturbation_mapping[constraint_base] = value_to_label
-
-    print(f"Created perturbation mapping: {perturbation_mapping}")
-    return perturbation_mapping
-
-def create_default_perturbation_mapping(perturbation_values):
-    """
-    Create a default mapping when config mapping is not available.
-
-    Args:
-        perturbation_values (list): List of numerical perturbation values
-
-    Returns:
-        dict: Dictionary mapping values to labels
-    """
-    sorted_values = sorted(perturbation_values)
-    mapping = {}
-
-    for value in sorted_values:
-        if value == 0:
-            mapping[value] = "zero"
-        elif value > 0:
-            mapping[value] = "positive"
-        else:
-            # Negative values - assign labels based on magnitude
-            if len(sorted_values) <= 2:
-                mapping[value] = "negative"
-            elif len(sorted_values) == 3:
-                if value == min(sorted_values):
-                    mapping[value] = "very negative"
-                else:
-                    mapping[value] = "negative"
-            else:
-                # 4 or more values
-                sorted_neg = [v for v in sorted_values if v < 0]
-                if len(sorted_neg) >= 3:
-                    if value == min(sorted_neg):
-                        mapping[value] = "catastrophic"
-                    elif value == max(sorted_neg):
-                        mapping[value] = "negative"
-                    else:
-                        mapping[value] = "very negative"
-                else:
-                    if value == min(sorted_neg):
-                        mapping[value] = "very negative"
-                    else:
-                        mapping[value] = "negative"
-
-    return mapping
-
-def create_single_perturbation_histogram(csv_file, config, output_dir):
-    """
-    Create histogram for a single perturbation CSV file.
-
-    Args:
-        csv_file (str): Path to CSV file
-        config (dict): Configuration dictionary
-        output_dir (str): Output directory for plots
-    """
-    try:
-        # Read CSV data
-        df = pd.read_csv(csv_file)
-
-        if len(df) == 0:
-            print(f"No data in {csv_file}")
-            return
-
-        # Extract constraint name from filename
-        filename = os.path.basename(csv_file)
-        constraint_match = filename.replace('_SINGLE_PERTURBATIONS.csv', '')
-        constraint_name = constraint_match.replace('_CONSTRAINT', '').replace('_', ' ').title()
-
-        # Get perturbation mapping
-        perturbation_mapping_by_constraint = create_perturbation_mapping(config)
-        constraint_base = constraint_match.replace('_CONSTRAINT', '').lower()
-
-        if constraint_base in perturbation_mapping_by_constraint:
-            perturbation_mapping = perturbation_mapping_by_constraint[constraint_base]
-        else:
-            # Create default mapping
-            perturbation_values = df['Perturbation'].unique()
-            perturbation_mapping = create_default_perturbation_mapping(perturbation_values)
-
-        # Prepare data for plotting
-        perturbation_levels = sorted(df['Perturbation'].unique())
-
-        # Create labels for x-axis
-        x_labels = [perturbation_mapping.get(level, str(level)) for level in perturbation_levels]
-        x_positions = np.arange(len(perturbation_levels))
-
-        # Identify success rate columns for strategies
-        success_columns = [col for col in df.columns if col.endswith('_Success_Rate')]
-
-        # Define strategy order and get colors
-        colors = get_strategy_colors()
-
-        # Create figure
-        fig, ax = plt.subplots(figsize=(12, 8))
-
-        # Calculate bar width
-        bar_width = 0.8 / len(success_columns)
-
-        # Plot bars for each strategy
-        for i, col in enumerate(success_columns):
-            strategy_name = col.replace('_Success_Rate', '')
-            strategy_data = df.set_index('Perturbation')[col].reindex(perturbation_levels)
-
-            # Calculate bar positions
-            bar_positions = x_positions + (i - len(success_columns)/2 + 0.5) * bar_width
-
-            # Create bars
-            bars = ax.bar(bar_positions, strategy_data, bar_width,
-                         label=strategy_name,
-                         color=colors.get(strategy_name, '#7f7f7f'),
-                         alpha=0.8)
-
-        # Customize the plot
-        ax.set_xlabel('Perturbation Level', fontsize=14)
-        ax.set_ylabel('Success Rate (%)', fontsize=14)
-        ax.set_title(f'Analysis of Perturbation for {constraint_name}', fontsize=16, fontweight='bold')
-
-        # Set x-axis
-        ax.set_xticks(x_positions)
-        ax.set_xticklabels(x_labels, fontsize=12)
-
-        # Set y-axis
-        ax.set_ylim(0, 110)
-        ax.tick_params(axis='y', labelsize=12)
-
-        # Add legend in upper left
-        ax.legend(loc='upper left', fontsize=12)
-
-        # Add grid for better readability
-        ax.grid(axis='y', linestyle='--', alpha=0.3)
-
-        # Tight layout
-        plt.tight_layout()
-
-        # Save plot
-        safe_constraint = constraint_name.replace(' ', '_').lower()
-        output_filename = f"{safe_constraint}_perturbation_analysis.png"
-        filepath = os.path.join(output_dir, output_filename)
-        plt.savefig(filepath, dpi=300, bbox_inches='tight')
-        plt.close()
-
-        print(f"Created histogram: {output_filename}")
-
-    except Exception as e:
-        print(f"Error creating histogram for {csv_file}: {e}")
-
-def process_single_perturbation_tables(tables_dir, config):
-    """
-    Process all single perturbation CSV files and create histograms.
-
-    Args:
-        tables_dir (str): Path to tables directory
-        config (dict): Configuration dictionary
-    """
-    if not os.path.exists(tables_dir):
-        print(f"Error: Tables directory {tables_dir} does not exist")
-        return
-
-    # Find all single perturbation CSV files
-    csv_files = [f for f in os.listdir(tables_dir)
-                 if f.endswith('_SINGLE_PERTURBATIONS.csv')]
-
-    if not csv_files:
-        print(f"No single perturbation CSV files found in {tables_dir}")
-        return
-
-    print(f"Found {len(csv_files)} single perturbation files to process")
+def create_strategy_comparison_plots(summary_df, quality_goal, output_dir):
+    """Create comparison plots for a quality goal."""
 
     # Create plots subdirectory
-    plots_dir = os.path.join(tables_dir, "plots")
+    plots_dir = os.path.join(output_dir, 'plots')
     os.makedirs(plots_dir, exist_ok=True)
 
-    # Process each CSV file
-    for csv_file in sorted(csv_files):
-        print(f"Processing: {csv_file}")
-        csv_path = os.path.join(tables_dir, csv_file)
-        create_single_perturbation_histogram(csv_path, config, plots_dir)
+    # Get perturbation values and create labels
+    perturbation_values = sorted(summary_df['Perturbation'].unique())
+    label_mapping = get_perturbation_label_mapping()
 
-    print(f"\nAll histograms saved to: {plots_dir}")
+    # Create custom labels for x-axis
+    x_labels = []
+    for val in perturbation_values:
+        if val in label_mapping:
+            x_labels.append(label_mapping[val])
+        else:
+            x_labels.append(str(val))
+
+    # Define strategies with their data columns and display labels
+    strategies = [
+        ('Min_Success_Rate', 'Min_Average_Margin', 'Min (α = 0)'),
+        ('Score_03_Success_Rate', 'Score_03_Average_Margin', 'α=0.3'),
+        ('Score_05_Success_Rate', 'Score_05_Average_Margin', 'α=0.5'),
+        ('Score_07_Success_Rate', 'Score_07_Average_Margin', 'α=0.7'),
+        ('Avg_Success_Rate', 'Avg_Average_Margin', 'Avg (α=1)'),
+        ('Rnd_Success_Rate', 'Rnd_Average_Margin', 'Rnd')
+    ]
+
+    # Set up plot parameters with pastel colors
+    x_pos = np.arange(len(perturbation_values))
+    width = 0.13  # Width of bars
+    colors = ['#F1948A', '#F8C471', '#A9DFBF', '#AED6F1', '#D2B4DE', '#D7C3A0']  # Pastel colors
+
+    # Create Success Rate plot
+    fig, ax = plt.subplots(figsize=(12, 8))
+
+    for i, (success_col, _, label) in enumerate(strategies):
+        if success_col in summary_df.columns:
+            values = summary_df.set_index('Perturbation').loc[perturbation_values, success_col].values
+            ax.bar(x_pos + i * width, values, width, label=label, color=colors[i])
+
+    ax.set_xlabel(f'{quality_goal.title()} Perturbation', fontsize=12)
+    ax.set_ylabel('Success Rate (%)', fontsize=12)
+    ax.set_title(f'Comparison of Strategies by {quality_goal.title()} Perturbation', fontsize=14, fontweight='bold')
+    ax.set_xticks(x_pos + width * 2.5)  # Center the x-tick labels
+    ax.set_xticklabels(x_labels)
+    ax.legend(loc='upper left', fontsize=10)
+    ax.grid(True, alpha=0.3)
+
+    # Save Success Rate plot
+    success_file = os.path.join(plots_dir, f'histo_single_{quality_goal}_perturbation_success.png')
+    plt.tight_layout()
+    plt.savefig(success_file, dpi=300, bbox_inches='tight')
+    plt.close()
+
+    # Create Average Margin plot
+    fig, ax = plt.subplots(figsize=(12, 8))
+
+    for i, (_, margin_col, label) in enumerate(strategies):
+        if margin_col in summary_df.columns:
+            values = summary_df.set_index('Perturbation').loc[perturbation_values, margin_col].values
+            ax.bar(x_pos + i * width, values, width, label=label, color=colors[i])
+
+    ax.set_xlabel(f'{quality_goal.title()} Perturbation', fontsize=12)
+    ax.set_ylabel('Average Margin', fontsize=12)
+    ax.set_title(f'Comparison of Strategies by {quality_goal.title()} Perturbation', fontsize=14, fontweight='bold')
+    ax.set_xticks(x_pos + width * 2.5)  # Center the x-tick labels
+    ax.set_xticklabels(x_labels)
+    ax.legend(loc='upper left', fontsize=10)
+    ax.grid(True, alpha=0.3)
+
+    # Save Average Margin plot
+    margin_file = os.path.join(plots_dir, f'histo_single_{quality_goal}_perturbation_margin.png')
+    plt.tight_layout()
+    plt.savefig(margin_file, dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(f"Created plots for {quality_goal}:")
+    print(f"  - {success_file}")
+    print(f"  - {margin_file}")
+
+    return [success_file, margin_file]
+
+
+def create_multiple_perturbation_plots(summary_df, output_dir):
+    """Create comparison plots for multiple perturbation severity."""
+
+    # Create plots subdirectory
+    plots_dir = os.path.join(output_dir, 'plots')
+    os.makedirs(plots_dir, exist_ok=True)
+
+    # Get perturbation scores (from highest severity to lowest)
+    perturbation_scores = sorted(summary_df['perturbation_score'].unique(), reverse=True)
+    x_labels = [str(score) for score in perturbation_scores]
+
+    # Define strategies with their data columns and display labels
+    strategies = [
+        ('Min_Success_Rate', 'Min_Average_Margin', 'Min (α = 0)'),
+        ('Score_03_Success_Rate', 'Score_03_Average_Margin', 'α=0.3'),
+        ('Score_05_Success_Rate', 'Score_05_Average_Margin', 'α=0.5'),
+        ('Score_07_Success_Rate', 'Score_07_Average_Margin', 'α=0.7'),
+        ('Avg_Success_Rate', 'Avg_Average_Margin', 'Avg (α=1)'),
+        ('Rnd_Success_Rate', 'Rnd_Average_Margin', 'Rnd')
+    ]
+
+    # Set up plot parameters with same pastel colors
+    x_pos = np.arange(len(perturbation_scores))
+    width = 0.13  # Width of bars
+    colors = ['#F1948A', '#F8C471', '#A9DFBF', '#AED6F1', '#D2B4DE', '#D7C3A0']  # Pastel colors
+
+    # Create Success Rate plot
+    fig, ax = plt.subplots(figsize=(12, 8))
+
+    for i, (success_col, _, label) in enumerate(strategies):
+        if success_col in summary_df.columns:
+            values = summary_df.set_index('perturbation_score').loc[perturbation_scores, success_col].values
+            ax.bar(x_pos + i * width, values, width, label=label, color=colors[i])
+
+    ax.set_xlabel('Global Perturbation Severity', fontsize=12)
+    ax.set_ylabel('Success Rate (%)', fontsize=12)
+    ax.set_title('Comparison of Strategies by Global Perturbation', fontsize=14, fontweight='bold')
+    ax.set_xticks(x_pos + width * 2.5)  # Center the x-tick labels
+    ax.set_xticklabels(x_labels)
+    ax.legend(loc='upper left', fontsize=10)
+    ax.grid(True, alpha=0.3)
+
+    # Save Success Rate plot
+    success_file = os.path.join(plots_dir, 'histo_multi_perturbation_success.png')
+    plt.tight_layout()
+    plt.savefig(success_file, dpi=300, bbox_inches='tight')
+    plt.close()
+
+    # Create Average Margin plot
+    fig, ax = plt.subplots(figsize=(12, 8))
+
+    for i, (_, margin_col, label) in enumerate(strategies):
+        if margin_col in summary_df.columns:
+            values = summary_df.set_index('perturbation_score').loc[perturbation_scores, margin_col].values
+            ax.bar(x_pos + i * width, values, width, label=label, color=colors[i])
+
+    ax.set_xlabel('Global Perturbation Severity', fontsize=12)
+    ax.set_ylabel('Average Margin', fontsize=12)
+    ax.set_title('Comparison of Strategies by Global Perturbation', fontsize=14, fontweight='bold')
+    ax.set_xticks(x_pos + width * 2.5)  # Center the x-tick labels
+    ax.set_xticklabels(x_labels)
+    ax.legend(loc='upper left', fontsize=10)
+    ax.grid(True, alpha=0.3)
+
+    # Save Average Margin plot
+    margin_file = os.path.join(plots_dir, 'histo_multi_perturbation_margin.png')
+    plt.tight_layout()
+    plt.savefig(margin_file, dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print(f"Created multiple perturbation plots:")
+    print(f"  - {success_file}")
+    print(f"  - {margin_file}")
+
+    return [success_file, margin_file]
+
 
 def main():
-    """Main function to handle command line arguments and run the visualization generation."""
-    if len(sys.argv) != 2:
-        print("Usage: python pipeline3_data_visualization.py <config_file>")
-        print("Example: python pipeline3_data_visualization.py data/meeting_scheduler.json")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Create visualization plots comparing strategies across perturbation levels"
+    )
+    parser.add_argument(
+        'config_file',
+        help='Path to the configuration JSON file'
+    )
 
-    config_file = sys.argv[1]
-
-    print(f"Starting Q2S data visualization pipeline")
-    print(f"Configuration file: {config_file}")
+    args = parser.parse_args()
 
     # Load configuration
-    config = load_json_config(config_file)
-    if config is None:
-        print("Failed to load configuration. Exiting.")
-        return
+    config = load_config(args.config_file)
 
-    # Get tables directory from configuration
-    output_dir = config["simulation_settings"]["output_directory"]
-    tables_dir = os.path.join(output_dir, "tables")
+    # Get file paths
+    output_dir = config['simulation_settings']['output_directory']
+    tables_dir = os.path.join(output_dir, 'tables')
 
-    print(f"Tables directory: {tables_dir}")
+    # Get quality goals from config
+    quality_goals = config.get('quality_goals', [])
 
-    # Set matplotlib style
-    plt.style.use('default')
+    print(f"Creating visualization plots...")
 
-    # Process single perturbation tables
-    process_single_perturbation_tables(tables_dir, config)
+    created_plots = []
 
-    print("Data visualization pipeline completed!")
+    # Process each quality goal (single perturbation plots)
+    if quality_goals:
+        print(f"\nCreating single perturbation plots for {len(quality_goals)} quality goals...")
+
+        for qg in quality_goals:
+            domain_variable = qg.get('column_name', qg.get('domain_variable'))
+            if not domain_variable:
+                continue
+
+            # Get quality goal name
+            quality_goal = extract_quality_goal_name(domain_variable)
+
+            # Load summary data
+            summary_file = os.path.join(tables_dir, f'summary_{quality_goal}_single_perturbation.csv')
+
+            if not os.path.exists(summary_file):
+                print(f"Warning: Summary file not found: {summary_file}")
+                continue
+
+            print(f"\nProcessing {quality_goal}...")
+            summary_df = pd.read_csv(summary_file)
+
+            print(f"Loaded summary data: {len(summary_df)} perturbation levels")
+            print(f"Perturbation values: {sorted(summary_df['Perturbation'].unique())}")
+
+            # Create plots
+            plot_files = create_strategy_comparison_plots(summary_df, quality_goal, output_dir)
+            created_plots.extend(plot_files)
+
+    # Process multiple perturbation plot
+    print(f"\nCreating multiple perturbation plots...")
+    multiple_summary_file = os.path.join(tables_dir, 'summary_multiple_perturbation.csv')
+
+    if os.path.exists(multiple_summary_file):
+        print(f"Loading multiple perturbation summary data...")
+        multiple_summary_df = pd.read_csv(multiple_summary_file)
+
+        print(f"Loaded multiple perturbation data: {len(multiple_summary_df)} severity levels")
+        print(f"Perturbation scores: {sorted(multiple_summary_df['perturbation_score'].unique())}")
+
+        # Create multiple perturbation plots
+        plot_files = create_multiple_perturbation_plots(multiple_summary_df, output_dir)
+        created_plots.extend(plot_files)
+    else:
+        print(f"Warning: Multiple perturbation summary file not found: {multiple_summary_file}")
+
+    # Summary
+    print(f"\n" + "="*50)
+    print(f"Visualization complete!")
+    print(f"Created {len(created_plots)} plots in: {os.path.join(output_dir, 'plots')}")
+
+    for plot_file in created_plots:
+        print(f"  - {os.path.basename(plot_file)}")
+
 
 if __name__ == "__main__":
     main()
