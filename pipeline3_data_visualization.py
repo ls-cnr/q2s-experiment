@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
 Pipeline Step 3: Data Visualization
-This script creates histogram plots comparing different strategies across perturbation levels
+This script creates histogram and line plots comparing different strategies across perturbation levels
 using the summary tables generated in previous steps.
 
 For each quality goal, it generates:
-1. Single perturbation success rate comparison histogram
-2. Single perturbation average margin comparison histogram
+1. Single perturbation success rate comparison histogram and line chart
+2. Single perturbation average margin comparison histogram and line chart
 
 Additionally, it creates:
-3. Multiple perturbation success rate comparison histogram
-4. Multiple perturbation average margin comparison histogram
+3. Multiple perturbation success rate comparison histogram and line chart
+4. Multiple perturbation average margin comparison histogram and line chart
 
 The plots compare 6 strategies: Min (α=0), α=0.3, α=0.5, α=0.7, Avg (α=1), and Rnd
 across different perturbation levels with custom labels and pastel color palette.
@@ -40,25 +40,25 @@ def extract_quality_goal_name(domain_variable):
 
 def get_perturbation_label_mapping():
     """Create mapping from perturbation values to descriptive labels."""
-    # This mapping assumes common perturbation values
-    # Can be extended or made configurable if needed
+    # Standard mapping for single perturbation analysis
+    # Always uses: zero perturbation, negative, very negative, catastrophic
     return {
-        -100: "catastrophic",
-        -75: "very negative",
+        0: "zero perturbation",
         -10: "negative",
-        0: "zero perturbation"
+        -75: "very negative",
+        -100: "catastrophic"
     }
 
 
 def create_strategy_comparison_plots(summary_df, quality_goal, output_dir):
-    """Create comparison plots for a quality goal."""
+    """Create comparison plots (both histogram and line chart) for a quality goal."""
 
     # Create plots subdirectory
     plots_dir = os.path.join(output_dir, 'plots')
     os.makedirs(plots_dir, exist_ok=True)
 
-    # Get perturbation values and create labels
-    perturbation_values = sorted(summary_df['Perturbation'].unique())
+    # Get perturbation values and sort from highest to lowest (0 on left, catastrophic on right)
+    perturbation_values = sorted(summary_df['Perturbation'].unique(), reverse=True)
     label_mapping = get_perturbation_label_mapping()
 
     # Create custom labels for x-axis
@@ -67,7 +67,15 @@ def create_strategy_comparison_plots(summary_df, quality_goal, output_dir):
         if val in label_mapping:
             x_labels.append(label_mapping[val])
         else:
-            x_labels.append(str(val))
+            # Fallback for unmapped values
+            if val == 0:
+                x_labels.append("zero perturbation")
+            elif val > -20:
+                x_labels.append("negative")
+            elif val > -90:
+                x_labels.append("very negative")
+            else:
+                x_labels.append("catastrophic")
 
     # Define strategies with their data columns and display labels
     strategies = [
@@ -84,7 +92,9 @@ def create_strategy_comparison_plots(summary_df, quality_goal, output_dir):
     width = 0.13  # Width of bars
     colors = ['#F1948A', '#F8C471', '#A9DFBF', '#AED6F1', '#D2B4DE', '#D7C3A0']  # Pastel colors
 
-    # Create Success Rate plot
+    created_files = []
+
+    # Create Success Rate HISTOGRAM
     fig, ax = plt.subplots(figsize=(12, 8))
 
     for i, (success_col, _, label) in enumerate(strategies):
@@ -97,16 +107,40 @@ def create_strategy_comparison_plots(summary_df, quality_goal, output_dir):
     ax.set_title(f'Comparison of Strategies by {quality_goal.title()} Perturbation', fontsize=14, fontweight='bold')
     ax.set_xticks(x_pos + width * 2.5)  # Center the x-tick labels
     ax.set_xticklabels(x_labels)
-    ax.legend(loc='upper left', fontsize=10)
+    ax.legend(loc='upper right', fontsize=10)  # Changed to upper right
     ax.grid(True, alpha=0.3)
 
-    # Save Success Rate plot
-    success_file = os.path.join(plots_dir, f'histo_single_{quality_goal}_perturbation_success.png')
+    # Save Success Rate histogram
+    success_histo_file = os.path.join(plots_dir, f'histo_single_{quality_goal}_perturbation_success.png')
     plt.tight_layout()
-    plt.savefig(success_file, dpi=300, bbox_inches='tight')
+    plt.savefig(success_histo_file, dpi=300, bbox_inches='tight')
     plt.close()
+    created_files.append(success_histo_file)
 
-    # Create Average Margin plot
+    # Create Success Rate LINE CHART
+    fig, ax = plt.subplots(figsize=(12, 8))
+
+    for i, (success_col, _, label) in enumerate(strategies):
+        if success_col in summary_df.columns:
+            values = summary_df.set_index('Perturbation').loc[perturbation_values, success_col].values
+            ax.plot(x_pos, values, marker='o', linewidth=2, markersize=6, label=label, color=colors[i])
+
+    ax.set_xlabel(f'{quality_goal.title()} Perturbation', fontsize=12)
+    ax.set_ylabel('Success Rate (%)', fontsize=12)
+    ax.set_title(f'Comparison of Strategies by {quality_goal.title()} Perturbation', fontsize=14, fontweight='bold')
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(x_labels)
+    ax.legend(loc='upper right', fontsize=10)  # Changed to upper right
+    ax.grid(True, alpha=0.3)
+
+    # Save Success Rate line chart
+    success_line_file = os.path.join(plots_dir, f'line_single_{quality_goal}_perturbation_success.png')
+    plt.tight_layout()
+    plt.savefig(success_line_file, dpi=300, bbox_inches='tight')
+    plt.close()
+    created_files.append(success_line_file)
+
+    # Create Average Margin HISTOGRAM
     fig, ax = plt.subplots(figsize=(12, 8))
 
     for i, (_, margin_col, label) in enumerate(strategies):
@@ -119,31 +153,55 @@ def create_strategy_comparison_plots(summary_df, quality_goal, output_dir):
     ax.set_title(f'Comparison of Strategies by {quality_goal.title()} Perturbation', fontsize=14, fontweight='bold')
     ax.set_xticks(x_pos + width * 2.5)  # Center the x-tick labels
     ax.set_xticklabels(x_labels)
-    ax.legend(loc='upper left', fontsize=10)
+    ax.legend(loc='upper right', fontsize=10)  # Changed to upper right
     ax.grid(True, alpha=0.3)
 
-    # Save Average Margin plot
-    margin_file = os.path.join(plots_dir, f'histo_single_{quality_goal}_perturbation_margin.png')
+    # Save Average Margin histogram
+    margin_histo_file = os.path.join(plots_dir, f'histo_single_{quality_goal}_perturbation_margin.png')
     plt.tight_layout()
-    plt.savefig(margin_file, dpi=300, bbox_inches='tight')
+    plt.savefig(margin_histo_file, dpi=300, bbox_inches='tight')
     plt.close()
+    created_files.append(margin_histo_file)
+
+    # Create Average Margin LINE CHART
+    fig, ax = plt.subplots(figsize=(12, 8))
+
+    for i, (_, margin_col, label) in enumerate(strategies):
+        if margin_col in summary_df.columns:
+            values = summary_df.set_index('Perturbation').loc[perturbation_values, margin_col].values
+            ax.plot(x_pos, values, marker='o', linewidth=2, markersize=6, label=label, color=colors[i])
+
+    ax.set_xlabel(f'{quality_goal.title()} Perturbation', fontsize=12)
+    ax.set_ylabel('Average Margin', fontsize=12)
+    ax.set_title(f'Comparison of Strategies by {quality_goal.title()} Perturbation', fontsize=14, fontweight='bold')
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(x_labels)
+    ax.legend(loc='upper right', fontsize=10)  # Changed to upper right
+    ax.grid(True, alpha=0.3)
+
+    # Save Average Margin line chart
+    margin_line_file = os.path.join(plots_dir, f'line_single_{quality_goal}_perturbation_margin.png')
+    plt.tight_layout()
+    plt.savefig(margin_line_file, dpi=300, bbox_inches='tight')
+    plt.close()
+    created_files.append(margin_line_file)
 
     print(f"Created plots for {quality_goal}:")
-    print(f"  - {success_file}")
-    print(f"  - {margin_file}")
+    for file in created_files:
+        print(f"  - {os.path.basename(file)}")
 
-    return [success_file, margin_file]
+    return created_files
 
 
 def create_multiple_perturbation_plots(summary_df, output_dir):
-    """Create comparison plots for multiple perturbation severity."""
+    """Create comparison plots (both histogram and line chart) for multiple perturbation severity."""
 
     # Create plots subdirectory
     plots_dir = os.path.join(output_dir, 'plots')
     os.makedirs(plots_dir, exist_ok=True)
 
-    # Get perturbation scores (from highest severity to lowest)
-    perturbation_scores = sorted(summary_df['perturbation_score'].unique(), reverse=True)
+    # Get perturbation scores and sort from lowest to highest (0 on left, higher values on right)
+    perturbation_scores = sorted(summary_df['perturbation_score'].unique())  # Removed reverse=True
     x_labels = [str(score) for score in perturbation_scores]
 
     # Define strategies with their data columns and display labels
@@ -161,7 +219,9 @@ def create_multiple_perturbation_plots(summary_df, output_dir):
     width = 0.13  # Width of bars
     colors = ['#F1948A', '#F8C471', '#A9DFBF', '#AED6F1', '#D2B4DE', '#D7C3A0']  # Pastel colors
 
-    # Create Success Rate plot
+    created_files = []
+
+    # Create Success Rate HISTOGRAM
     fig, ax = plt.subplots(figsize=(12, 8))
 
     for i, (success_col, _, label) in enumerate(strategies):
@@ -174,16 +234,40 @@ def create_multiple_perturbation_plots(summary_df, output_dir):
     ax.set_title('Comparison of Strategies by Global Perturbation', fontsize=14, fontweight='bold')
     ax.set_xticks(x_pos + width * 2.5)  # Center the x-tick labels
     ax.set_xticklabels(x_labels)
-    ax.legend(loc='upper left', fontsize=10)
+    ax.legend(loc='upper right', fontsize=10)  # Changed to upper right
     ax.grid(True, alpha=0.3)
 
-    # Save Success Rate plot
-    success_file = os.path.join(plots_dir, 'histo_multi_perturbation_success.png')
+    # Save Success Rate histogram
+    success_histo_file = os.path.join(plots_dir, 'histo_multi_perturbation_success.png')
     plt.tight_layout()
-    plt.savefig(success_file, dpi=300, bbox_inches='tight')
+    plt.savefig(success_histo_file, dpi=300, bbox_inches='tight')
     plt.close()
+    created_files.append(success_histo_file)
 
-    # Create Average Margin plot
+    # Create Success Rate LINE CHART
+    fig, ax = plt.subplots(figsize=(12, 8))
+
+    for i, (success_col, _, label) in enumerate(strategies):
+        if success_col in summary_df.columns:
+            values = summary_df.set_index('perturbation_score').loc[perturbation_scores, success_col].values
+            ax.plot(x_pos, values, marker='o', linewidth=2, markersize=6, label=label, color=colors[i])
+
+    ax.set_xlabel('Global Perturbation Severity', fontsize=12)
+    ax.set_ylabel('Success Rate (%)', fontsize=12)
+    ax.set_title('Comparison of Strategies by Global Perturbation', fontsize=14, fontweight='bold')
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(x_labels)
+    ax.legend(loc='upper right', fontsize=10)  # Changed to upper right
+    ax.grid(True, alpha=0.3)
+
+    # Save Success Rate line chart
+    success_line_file = os.path.join(plots_dir, 'line_multi_perturbation_success.png')
+    plt.tight_layout()
+    plt.savefig(success_line_file, dpi=300, bbox_inches='tight')
+    plt.close()
+    created_files.append(success_line_file)
+
+    # Create Average Margin HISTOGRAM
     fig, ax = plt.subplots(figsize=(12, 8))
 
     for i, (_, margin_col, label) in enumerate(strategies):
@@ -196,25 +280,49 @@ def create_multiple_perturbation_plots(summary_df, output_dir):
     ax.set_title('Comparison of Strategies by Global Perturbation', fontsize=14, fontweight='bold')
     ax.set_xticks(x_pos + width * 2.5)  # Center the x-tick labels
     ax.set_xticklabels(x_labels)
-    ax.legend(loc='upper left', fontsize=10)
+    ax.legend(loc='upper right', fontsize=10)  # Changed to upper right
     ax.grid(True, alpha=0.3)
 
-    # Save Average Margin plot
-    margin_file = os.path.join(plots_dir, 'histo_multi_perturbation_margin.png')
+    # Save Average Margin histogram
+    margin_histo_file = os.path.join(plots_dir, 'histo_multi_perturbation_margin.png')
     plt.tight_layout()
-    plt.savefig(margin_file, dpi=300, bbox_inches='tight')
+    plt.savefig(margin_histo_file, dpi=300, bbox_inches='tight')
     plt.close()
+    created_files.append(margin_histo_file)
+
+    # Create Average Margin LINE CHART
+    fig, ax = plt.subplots(figsize=(12, 8))
+
+    for i, (_, margin_col, label) in enumerate(strategies):
+        if margin_col in summary_df.columns:
+            values = summary_df.set_index('perturbation_score').loc[perturbation_scores, margin_col].values
+            ax.plot(x_pos, values, marker='o', linewidth=2, markersize=6, label=label, color=colors[i])
+
+    ax.set_xlabel('Global Perturbation Severity', fontsize=12)
+    ax.set_ylabel('Average Margin', fontsize=12)
+    ax.set_title('Comparison of Strategies by Global Perturbation', fontsize=14, fontweight='bold')
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(x_labels)
+    ax.legend(loc='upper right', fontsize=10)  # Changed to upper right
+    ax.grid(True, alpha=0.3)
+
+    # Save Average Margin line chart
+    margin_line_file = os.path.join(plots_dir, 'line_multi_perturbation_margin.png')
+    plt.tight_layout()
+    plt.savefig(margin_line_file, dpi=300, bbox_inches='tight')
+    plt.close()
+    created_files.append(margin_line_file)
 
     print(f"Created multiple perturbation plots:")
-    print(f"  - {success_file}")
-    print(f"  - {margin_file}")
+    for file in created_files:
+        print(f"  - {os.path.basename(file)}")
 
-    return [success_file, margin_file]
+    return created_files
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Create visualization plots comparing strategies across perturbation levels"
+        description="Create visualization plots (histograms and line charts) comparing strategies across perturbation levels"
     )
     parser.add_argument(
         'config_file',
@@ -233,7 +341,7 @@ def main():
     # Get quality goals from config
     quality_goals = config.get('quality_goals', [])
 
-    print(f"Creating visualization plots...")
+    print(f"Creating visualization plots (histograms and line charts)...")
 
     created_plots = []
 
@@ -288,7 +396,16 @@ def main():
     print(f"Visualization complete!")
     print(f"Created {len(created_plots)} plots in: {os.path.join(output_dir, 'plots')}")
 
-    for plot_file in created_plots:
+    # Group by type for better summary
+    histo_plots = [p for p in created_plots if 'histo_' in os.path.basename(p)]
+    line_plots = [p for p in created_plots if 'line_' in os.path.basename(p)]
+
+    print(f"\nHistogram plots ({len(histo_plots)}):")
+    for plot_file in histo_plots:
+        print(f"  - {os.path.basename(plot_file)}")
+
+    print(f"\nLine chart plots ({len(line_plots)}):")
+    for plot_file in line_plots:
         print(f"  - {os.path.basename(plot_file)}")
 
 
