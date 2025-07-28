@@ -7,6 +7,9 @@ and creates a pre-processed version where rows differing only by alpha are group
 The transformation groups rows that are identical except for the alpha value and creates
 separate columns for ScorePlan results for each alpha value (0.3, 0.5, 0.7).
 
+Additionally, it generates a scenarios_summary.csv file that compares all strategies
+including Min (alpha=0), alpha values (0.3, 0.5, 0.7), Avg (alpha=1), and Random.
+
 Example transformation:
 Input rows with alpha=0.3, 0.5, 0.7 but identical other values become:
 - Score0_3Plan_ID, Score0_3Plan_success, Score0_3Plan_margins (from alpha=0.3 row)
@@ -18,6 +21,7 @@ Input rows with alpha=0.3, 0.5, 0.7 but identical other values become:
 import argparse
 import json
 import pandas as pd
+import numpy as np
 import os
 from pathlib import Path
 
@@ -39,6 +43,85 @@ def get_domain_variables(config):
             domain_variables.append(domain_variable)
 
     return domain_variables
+
+
+def calculate_strategy_metrics(df, strategy_prefix):
+    """Calculate metrics for a given strategy."""
+    success_col = f"{strategy_prefix}_success"
+    margins_col = f"{strategy_prefix}_margins"
+
+    if success_col not in df.columns or margins_col not in df.columns:
+        return {
+            'success_rate': 0.0,
+            'avg_margin': 0.0,
+            'avg_margin_when_success': 0.0
+        }
+
+    # Calculate success rate
+    success_rate = df[success_col].mean()
+
+    # Get all margins (as single numeric values, not lists)
+    all_margins = df[margins_col].dropna().tolist()
+
+    # Get margins only for successful cases
+    success_margins = df[df[success_col] == 1][margins_col].dropna().tolist()
+
+    # Calculate average margins
+    avg_margin = np.mean(all_margins) if all_margins else 0.0
+    avg_margin_when_success = np.mean(success_margins) if success_margins else 0.0
+
+    return {
+        'success_rate': success_rate,
+        'avg_margin': avg_margin,
+        'avg_margin_when_success': avg_margin_when_success
+    }
+
+
+def generate_scenarios_summary(preprocessed_df, output_dir):
+    """Generate scenarios summary comparing all strategies."""
+
+    # Ensure tables directory exists
+    tables_dir = os.path.join(output_dir, 'tables')
+    os.makedirs(tables_dir, exist_ok=True)
+
+    # Define strategies to analyze
+    strategies = {
+        'Min (alfa 0)': 'MinPlan',
+        'alfa 0.3': 'Score0_3Plan',
+        'alfa 0.5': 'Score0_5Plan',
+        'alfa 0.7': 'Score0_7Plan',
+        'Avg (alfa 1)': 'AvgPlan',
+        'Rnd': 'RndPlan'
+    }
+
+    # Calculate metrics for each strategy
+    summary_data = {
+        'Strategy': ['Success Rate', 'Avg Margin', 'Avg Margin (when success)']
+    }
+
+    for strategy_name, strategy_prefix in strategies.items():
+        metrics = calculate_strategy_metrics(preprocessed_df, strategy_prefix)
+
+        summary_data[strategy_name] = [
+            metrics['success_rate'],
+            metrics['avg_margin'],
+            metrics['avg_margin_when_success']
+        ]
+
+    # Create summary dataframe
+    summary_df = pd.DataFrame(summary_data)
+
+    # Save summary file
+    summary_file = os.path.join(tables_dir, 'scenarios_summary.csv')
+    summary_df.to_csv(summary_file, index=False, sep=';', float_format='%.9f')
+
+    print(f"Summary file saved to: {summary_file}")
+
+    # Print summary to console
+    print("\nScenarios Summary:")
+    print(summary_df.to_string(index=False, float_format='%.9f'))
+
+    return summary_df
 
 
 def preprocess_scenarios(scenarios_df, config):
@@ -120,7 +203,7 @@ def preprocess_scenarios(scenarios_df, config):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Pre-process scenarios data by grouping alpha values"
+        description="Pre-process scenarios data by grouping alpha values and generate summary"
     )
     parser.add_argument(
         'config_file',
@@ -158,6 +241,10 @@ def main():
     print(f"Pre-processed data saved to: {output_file}")
     print(f"Generated {len(preprocessed_df)} grouped scenarios")
     print(f"Columns in output: {list(preprocessed_df.columns)}")
+
+    # Generate scenarios summary
+    print("\nGenerating scenarios summary...")
+    summary_df = generate_scenarios_summary(preprocessed_df, output_dir)
 
 
 if __name__ == "__main__":
